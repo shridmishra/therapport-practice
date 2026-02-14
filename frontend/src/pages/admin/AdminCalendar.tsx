@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { formatDateUK } from '@/lib/utils';
+import { PaymentModal } from '@/components/payment/PaymentModal';
 import {
   useRooms,
   useCalendar,
@@ -96,7 +97,6 @@ const ALL_BOOKING_TYPES = [
   { value: 'ad_hoc' as const, label: 'Ad hoc' },
   { value: 'permanent_recurring' as const, label: 'Recurring' },
   { value: 'free' as const, label: 'Free' },
-  { value: 'internal' as const, label: 'Internal' },
 ];
 
 export const AdminCalendar: React.FC = () => {
@@ -106,7 +106,7 @@ export const AdminCalendar: React.FC = () => {
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('10:00');
   const [bookingType, setBookingType] = useState<
-    'ad_hoc' | 'permanent_recurring' | 'free' | 'internal'
+    'ad_hoc' | 'permanent_recurring' | 'free'
   >('ad_hoc');
   const [targetUserId, setTargetUserId] = useState<string>('');
 
@@ -116,14 +116,16 @@ export const AdminCalendar: React.FC = () => {
     date
   );
   const { practitioners, loadingPractitioners } = usePractitioners(
-    bookingType === 'free' || bookingType === 'internal'
+    bookingType === 'free' || bookingType === 'ad_hoc'
   );
   const {
     quotePrice,
     loadingQuote,
     submitting,
     createError,
+    setCreateError,
     createSuccess,
+    setCreateSuccess,
     cancelError,
     cancellingId,
     handleCreateBooking,
@@ -133,6 +135,12 @@ export const AdminCalendar: React.FC = () => {
     modifySubmitting,
     modifyError,
     handleUpdateBooking,
+    paymentModalOpen,
+    setPaymentModalOpen,
+    paymentClientSecret,
+    setPaymentClientSecret,
+    paymentAmountPence,
+    setPaymentAmountPence,
   } = useBookingHandlers({
     selectedRoomId,
     date,
@@ -190,7 +198,7 @@ export const AdminCalendar: React.FC = () => {
               <p className="text-sm text-slate-500">Loading calendar…</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse min-w-[400px] text-sm">
+                <table className="w-full border-collapse min-w-[400px] text-sm" style={{ tableLayout: 'fixed' }}>
                   <thead>
                     <tr>
                       <th className="border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 p-1.5 text-left text-xs font-medium text-slate-600 dark:text-slate-400 w-[60px]">
@@ -200,6 +208,7 @@ export const AdminCalendar: React.FC = () => {
                         <th
                           key={r.id}
                           className="border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 p-1.5 text-center text-xs font-medium text-slate-700 dark:text-slate-300"
+                          style={{ width: `${100 / calendarRooms.length}%` }}
                         >
                           {r.name}
                         </th>
@@ -290,7 +299,7 @@ export const AdminCalendar: React.FC = () => {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Create booking (on behalf)</CardTitle>
+            <CardTitle className="text-base">Create booking</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -331,7 +340,7 @@ export const AdminCalendar: React.FC = () => {
                   ))}
                 </select>
               </label>
-              {(bookingType === 'free' || bookingType === 'internal') && (
+              {(bookingType === 'free' || bookingType === 'ad_hoc') && (
                 <label className="flex flex-col gap-1 text-sm min-w-[200px]">
                   <span className="text-slate-600 dark:text-slate-400">Practitioner</span>
                   <select
@@ -496,6 +505,27 @@ export const AdminCalendar: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <PaymentModal
+        open={paymentModalOpen}
+        onOpenChange={(open) => {
+          setPaymentModalOpen(open);
+          if (!open) {
+            setPaymentClientSecret(null);
+            setPaymentAmountPence(undefined);
+          }
+        }}
+        clientSecret={paymentClientSecret}
+        amountPence={paymentAmountPence}
+        onSuccess={() => {
+          setPaymentModalOpen(false);
+          setPaymentClientSecret(null);
+          setPaymentAmountPence(undefined);
+          setCreateSuccess('Booking created.');
+          setCreateError(null);
+          fetchCalendar();
+        }}
+      />
     </MainLayout>
   );
 };

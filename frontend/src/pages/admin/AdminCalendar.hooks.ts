@@ -1,5 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { practitionerApi, adminApi, type RoomItem } from '@/services/api';
+import { AxiosError } from 'axios';
+import {
+  practitionerApi,
+  adminApi,
+  type RoomItem,
+  type CreateBookingPaymentRequiredError,
+} from '@/services/api';
 
 export type LocationName = 'Pimlico' | 'Kensington';
 
@@ -137,7 +143,7 @@ export type UseBookingHandlersParams = {
   date: string;
   startTime: string;
   endTime: string;
-  bookingType: 'ad_hoc' | 'permanent_recurring' | 'free' | 'internal';
+  bookingType: 'ad_hoc' | 'permanent_recurring' | 'free';
   targetUserId: string;
   fetchCalendar: (signal?: AbortSignal) => Promise<void>;
 };
@@ -156,6 +162,9 @@ export function useBookingHandlers(params: UseBookingHandlersParams) {
   const [modifyBooking, setModifyBooking] = useState<ModifyBookingState>(null);
   const [modifySubmitting, setModifySubmitting] = useState(false);
   const [modifyError, setModifyError] = useState<string | null>(null);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentClientSecret, setPaymentClientSecret] = useState<string | null>(null);
+  const [paymentAmountPence, setPaymentAmountPence] = useState<number | undefined>(undefined);
 
   useEffect(() => {
     if (!selectedRoomId || endTime <= startTime) {
@@ -192,6 +201,10 @@ export function useBookingHandlers(params: UseBookingHandlersParams) {
       setCreateError('End time must be after start time.');
       return;
     }
+    if ((bookingType === 'free' || bookingType === 'ad_hoc') && !targetUserId) {
+      setCreateError('Please select a practitioner.');
+      return;
+    }
     setCreateError(null);
     setCreateSuccess(null);
     setSubmitting(true);
@@ -203,7 +216,7 @@ export function useBookingHandlers(params: UseBookingHandlersParams) {
         endTime,
         bookingType,
       };
-      if ((bookingType === 'free' || bookingType === 'internal') && targetUserId) {
+      if ((bookingType === 'free' || bookingType === 'ad_hoc') && targetUserId) {
         payload.targetUserId = targetUserId;
       }
       const res = await practitionerApi.createBooking(payload);
@@ -217,11 +230,29 @@ export function useBookingHandlers(params: UseBookingHandlersParams) {
         setCreateError('Failed to create booking');
       }
     } catch (err: unknown) {
-      const msg =
-        err && typeof err === 'object' && 'response' in err
-          ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
-          : null;
-      setCreateError(msg ?? 'Failed to create booking');
+      // Use AxiosError for type narrowing and verify HTTP status code
+      if (err instanceof AxiosError && err.response) {
+        const status = err.response.status;
+        const data = err.response.data as CreateBookingPaymentRequiredError | { error?: string } | undefined;
+
+        // Handle payment required case (backend returns 402 with paymentRequired: true)
+        if (status === 402 && data && 'paymentRequired' in data && data.paymentRequired) {
+          const paymentData = data as CreateBookingPaymentRequiredError;
+          if (paymentData.clientSecret && paymentData.amountPence != null) {
+            setCreateError(null);
+            setPaymentClientSecret(paymentData.clientSecret);
+            setPaymentAmountPence(paymentData.amountPence);
+            setPaymentModalOpen(true);
+            return;
+          }
+        }
+
+        // Handle regular error case
+        const errorMsg = (data && 'error' in data ? data.error : undefined) ?? 'Failed to create booking';
+        setCreateError(errorMsg);
+      } else {
+        setCreateError('Failed to create booking');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -276,7 +307,9 @@ export function useBookingHandlers(params: UseBookingHandlersParams) {
     loadingQuote,
     submitting,
     createError,
+    setCreateError,
     createSuccess,
+    setCreateSuccess,
     cancelError,
     cancellingId,
     handleCreateBooking,
@@ -286,5 +319,11 @@ export function useBookingHandlers(params: UseBookingHandlersParams) {
     modifySubmitting,
     modifyError,
     handleUpdateBooking,
+    paymentModalOpen,
+    setPaymentModalOpen,
+    paymentClientSecret,
+    setPaymentClientSecret,
+    paymentAmountPence,
+    setPaymentAmountPence,
   };
 }

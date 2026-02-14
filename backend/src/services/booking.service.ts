@@ -769,7 +769,7 @@ export async function createBooking(
  * Cancel a booking and refund credits (full amount as manual credit for PR3; voucher hours not refunded).
  * Booking update and credit grant run in a single transaction so both succeed or both roll back.
  */
-export async function cancelBooking(bookingId: string, userId: string): Promise<void> {
+export async function cancelBooking(bookingId: string, userId: string, isAdmin: boolean = false): Promise<void> {
   let emailData: {
     firstName: string;
     email: string;
@@ -802,18 +802,21 @@ export async function cancelBooking(bookingId: string, userId: string): Promise<
     if (booking.status === 'cancelled')
       throw new BookingValidationError('Booking is already cancelled');
 
-    const bookingDateStr = String(booking.bookingDate);
-    const startTimeStr = formatTimeHHMM(booking.startTime as string | Date);
-    const [y, mo, d] = bookingDateStr.split('-').map(Number);
-    const [hh, mm] = startTimeStr.split(':').map(Number);
-    const bookingStartLocal = new Date(y, mo - 1, d, hh, mm, 0);
-    const bookingStartUtc = fromZonedTime(bookingStartLocal, 'Europe/London');
-    const now = new Date();
-    const minCancelBy = bookingStartUtc.getTime() - 24 * 60 * 60 * 1000;
-    if (now.getTime() > minCancelBy) {
-      throw new BookingValidationError(
-        'Cancellation with less than 24 hours notice is not permitted'
-      );
+    // Only enforce 24-hour restriction for non-admin users
+    if (!isAdmin) {
+      const bookingDateStr = String(booking.bookingDate);
+      const startTimeStr = formatTimeHHMM(booking.startTime as string | Date);
+      const [y, mo, d] = bookingDateStr.split('-').map(Number);
+      const [hh, mm] = startTimeStr.split(':').map(Number);
+      const bookingStartLocal = new Date(y, mo - 1, d, hh, mm, 0);
+      const bookingStartUtc = fromZonedTime(bookingStartLocal, 'Europe/London');
+      const now = new Date();
+      const minCancelBy = bookingStartUtc.getTime() - 24 * 60 * 60 * 1000;
+      if (now.getTime() > minCancelBy) {
+        throw new BookingValidationError(
+          'Cancellation with less than 24 hours notice is not permitted'
+        );
+      }
     }
 
     const refundAmount =

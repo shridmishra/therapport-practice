@@ -235,11 +235,22 @@ export class BookingController {
         });
         return;
       }
+      // For admin creating ad_hoc bookings, require targetUserId to be provided
+      if (type === 'ad_hoc' && req.user!.role === 'admin') {
+        if (!req.body.targetUserId || String(req.body.targetUserId).trim() === '') {
+          res.status(400).json({
+            success: false,
+            error: 'Practitioner selection is required for ad hoc bookings',
+          });
+          return;
+        }
+      }
       const targetUserId =
-        (type === 'free' || type === 'internal') &&
+        (type === 'free' || type === 'internal' || type === 'ad_hoc') &&
         req.user!.role === 'admin' &&
-        req.body.targetUserId
-          ? req.body.targetUserId
+        req.body.targetUserId &&
+        String(req.body.targetUserId).trim() !== ''
+          ? String(req.body.targetUserId).trim()
           : req.user!.id;
       if (targetUserId !== req.user!.id && req.user!.role !== 'admin') {
         res.status(403).json({ success: false, error: 'Forbidden' });
@@ -352,13 +363,14 @@ export class BookingController {
   async cancelBooking(req: AuthRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
+      const isAdmin = req.user!.role === 'admin';
       const effectiveUserId =
-        req.user!.role === 'admin' ? await BookingService.getBookingOwnerId(id) : req.user!.id;
+        isAdmin ? await BookingService.getBookingOwnerId(id) : req.user!.id;
       if (!effectiveUserId) {
         res.status(404).json({ success: false, error: 'Booking not found' });
         return;
       }
-      await BookingService.cancelBooking(id, effectiveUserId);
+      await BookingService.cancelBooking(id, effectiveUserId, isAdmin);
       res.status(200).json({ success: true, message: 'Booking cancelled' });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to cancel booking';
