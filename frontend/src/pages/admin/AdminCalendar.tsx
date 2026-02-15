@@ -248,7 +248,7 @@ export const AdminCalendar: React.FC = () => {
                                       const bookingId = booking.id;
                                       return (
                                         <div className="flex flex-wrap gap-1 mt-1">
-                                          <Button
+                                          {/* <Button
                                             size="sm"
                                             variant="outline"
                                             className="h-6 text-xs"
@@ -263,7 +263,7 @@ export const AdminCalendar: React.FC = () => {
                                             }
                                           >
                                             Modify
-                                          </Button>
+                                          </Button> */}
                                           <Button
                                             size="sm"
                                             variant="destructive"

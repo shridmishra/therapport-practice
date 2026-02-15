@@ -453,10 +453,13 @@ export async function validateBookingRequest(
   roomId: string,
   date: string,
   startTime: string,
-  endTime: string
+  endTime: string,
+  skipMembershipCheck?: boolean //allow free bookings without membership check
 ): Promise<{ valid: boolean; error?: string }> {
-  const can = await canUserBook(userId);
-  if (!can.ok) return { valid: false, error: can.reason };
+  if (!skipMembershipCheck) {
+    const can = await canUserBook(userId);
+    if (!can.ok) return { valid: false, error: can.reason };
+  }
 
   const today = todayUtcString();
   if (date < today) return { valid: false, error: 'Booking date must be today or in the future' };
@@ -532,7 +535,9 @@ export async function createBooking(
   paymentAmountMade?: number,
   isAdminRequest?: boolean
 ): Promise<CreateBookingResult> {
-  const validation = await validateBookingRequest(userId, roomId, date, startTime, endTime);
+  // For free bookings created by admin, skip membership check
+  const skipMembershipCheck = bookingType === 'free' && isAdminRequest;
+  const validation = await validateBookingRequest(userId, roomId, date, startTime, endTime, skipMembershipCheck);
   if (!validation.valid) throw new BookingValidationError(validation.error!);
 
   const { room, locationName } = await getRoomWithLocation(roomId);
@@ -551,6 +556,80 @@ export async function createBooking(
     throw new BookingValidationError('Invalid time string');
   }
   const todayStr = todayUtcString();
+
+  // Free bookings are completely free - skip all credit/voucher/payment logic
+  if (bookingType === 'free' && isAdminRequest) {
+    const result = await db.transaction(async (tx) => {
+      // For free bookings created by admin, create membership if it doesn't exist
+      let [membership] = await tx
+        .select()
+        .from(memberships)
+        .where(eq(memberships.userId, userId))
+        .limit(1);
+      
+      if (!membership) {
+        // Create a minimal ad_hoc membership for free bookings
+        [membership] = await tx
+          .insert(memberships)
+          .values({
+            userId,
+            type: 'ad_hoc',
+            marketingAddon: false,
+          })
+          .returning();
+      }
+
+      const [created] = await tx
+        .insert(bookings)
+        .values({
+          userId,
+          roomId,
+          membershipId: membership.id,
+          bookingDate: date,
+          startTime: startTimeDb,
+          endTime: endTimeDb,
+          pricePerHour: pricePerHour.toFixed(2),
+          totalPrice: totalPrice.toFixed(2),
+          creditUsed: '0.00', // Free bookings use no credits
+          voucherHoursUsed: '0.00', // Free bookings use no voucher hours
+          status: 'confirmed',
+          bookingType,
+        })
+        .returning({ id: bookings.id });
+      if (!created) throw new BookingValidationError('Failed to create booking');
+
+      return { id: created.id, creditUsed: 0 };
+    });
+
+    // Send confirmation email (fire-and-forget; do not fail the request if email fails)
+    const [userRow] = await db
+      .select({ email: users.email, firstName: users.firstName })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (userRow) {
+      emailService
+        .sendBookingConfirmation({
+          firstName: userRow.firstName,
+          email: userRow.email,
+          roomName: room.name,
+          locationName,
+          bookingDate: date,
+          startTime: startTimeDb,
+          endTime: endTimeDb,
+          totalPrice: totalPrice.toFixed(2),
+          creditUsed: undefined, // No credits used for free bookings
+        })
+        .catch((err) =>
+          logger.error('Failed to send booking confirmation email', err, {
+            userId,
+            bookingId: result.id,
+          })
+        );
+    }
+
+    return { id: result.id };
+  }
 
   const [membership] = await db
     .select()

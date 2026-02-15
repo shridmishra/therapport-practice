@@ -110,25 +110,28 @@ export async function getTransactionHistory(
     });
     
     // Calculate if there was a pay-the-difference payment
-    // Payment amount = totalPrice - creditUsed - voucherValue
-    // Voucher value = voucherHoursUsed * pricePerHour (using stored pricePerHour for accuracy)
-    const pricePerHour = parseFloat(booking.pricePerHour.toString());
-    const voucherValue = voucherHoursUsed > 0 && pricePerHour > 0
-      ? voucherHoursUsed * pricePerHour
-      : 0;
-    
-    // Only show Stripe transaction if payment amount is significant (more than 0.01 to account for rounding)
-    // This means the user actually paid a difference amount, not just rounding differences
-    // Round to 2 decimal places to avoid floating-point arithmetic errors
-    const paymentAmount = Math.round((totalPrice - creditUsed - voucherValue) * 100) / 100;
-    if (paymentAmount > 0.01) {
-      transactions.push({
-        date: booking.createdAt.toISOString().split('T')[0], // Use creation date (when transaction happened)
-        description: 'Stripe transaction',
-        amount: paymentAmount,
-        type: 'stripe_payment', // Use stripe_payment type to accurately represent Stripe payments
-        createdAt: booking.createdAt, // Use booking createdAt for chronological ordering
-      });
+    // Skip this for free bookings - they don't have any payments
+    if (booking.bookingType !== 'free') {
+      // Payment amount = totalPrice - creditUsed - voucherValue
+      // Voucher value = voucherHoursUsed * pricePerHour (using stored pricePerHour for accuracy)
+      const pricePerHour = parseFloat(booking.pricePerHour.toString());
+      const voucherValue = voucherHoursUsed > 0 && pricePerHour > 0
+        ? voucherHoursUsed * pricePerHour
+        : 0;
+      
+      // Only show Stripe transaction if payment amount is significant (more than 0.01 to account for rounding)
+      // This means the user actually paid a difference amount, not just rounding differences
+      // Round to 2 decimal places to avoid floating-point arithmetic errors
+      const paymentAmount = Math.round((totalPrice - creditUsed - voucherValue) * 100) / 100;
+      if (paymentAmount > 0.01) {
+        transactions.push({
+          date: booking.createdAt.toISOString().split('T')[0], // Use creation date (when transaction happened)
+          description: 'Stripe transaction',
+          amount: paymentAmount,
+          type: 'stripe_payment', // Use stripe_payment type to accurately represent Stripe payments
+          createdAt: booking.createdAt, // Use booking createdAt for chronological ordering
+        });
+      }
     }
   }
 

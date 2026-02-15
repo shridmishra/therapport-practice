@@ -181,13 +181,27 @@ export async function createCheckoutSessionForSubscription(
   params: CreateCheckoutSessionForSubscriptionParams
 ): Promise<CreateCheckoutSessionForSubscriptionResult> {
   const stripe = getStripe();
+  // Get the monthly price amount from the priceId to create a custom line item with the correct name
+  const price = await stripe.prices.retrieve(params.priceId);
+  const monthlyAmountPence = price.unit_amount ?? 0;
+  
   const lineItems: Array<
     | { price: string; quantity: number }
     | {
-        price_data: { currency: string; unit_amount: number; product_data: { name: string } };
+        price_data: { currency: string; unit_amount: number; product_data: { name: string }; recurring?: { interval: 'month' } };
         quantity: number;
       }
-  > = [{ price: params.priceId, quantity: 1 }];
+  > = [
+    {
+      price_data: {
+        currency: 'gbp',
+        unit_amount: monthlyAmountPence,
+        product_data: { name: 'Monthly membership (next month)' },
+        recurring: { interval: 'month' },
+      },
+      quantity: 1,
+    },
+  ];
   if (params.proratedAmountPence != null && params.proratedAmountPence > 0) {
     lineItems.unshift({
       price_data: {
