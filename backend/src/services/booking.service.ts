@@ -528,7 +528,7 @@ export async function createBooking(
   date: string,
   startTime: string,
   endTime: string,
-  bookingType: 'permanent_recurring' | 'ad_hoc' | 'free' | 'internal' = 'ad_hoc',
+  bookingType: 'permanent_recurring' | 'ad_hoc' | 'free',
   paymentAmountMade?: number,
   isAdminRequest?: boolean
 ): Promise<CreateBookingResult> {

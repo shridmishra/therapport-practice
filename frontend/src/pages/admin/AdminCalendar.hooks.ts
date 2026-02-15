@@ -247,6 +247,10 @@ export function useBookingHandlers(params: UseBookingHandlersParams) {
             setPaymentAmountPence(paymentData.amountPence);
             setPaymentModalOpen(true);
             return;
+          } else {
+            // Payment required but payment setup failed (missing clientSecret or amountPence)
+            setCreateError('Payment setup failed — please try again');
+            return;
           }
         }
 
