@@ -15,6 +15,7 @@ import * as CreditTransactionService from './credit-transaction.service';
 import { isStripeConfigured } from '../config/stripe';
 import { MembershipNotFoundError, OnlyAdHocTerminableError } from '../errors/subscription.errors';
 import { logger } from '../utils/logger.util';
+import { emailService } from './email.service';
 
 /**
  * Get existing Stripe customer ID from membership or by email, or create a new customer and persist to membership.
@@ -230,6 +231,50 @@ export async function terminateAdHocSubscription(
       updatedAt: new Date(),
     })
     .where(eq(memberships.id, membership.id));
+
+  // Get user details for email notifications
+  const [user] = await db
+    .select({
+      email: users.email,
+      firstName: users.firstName,
+      lastName: users.lastName,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  if (user) {
+    // calculateSuspensionDate returns a string (YYYY-MM-DD format)
+    const suspensionDateStr = suspensionDate;
+    const terminationDateStr = typeof terminationDate === 'string'
+      ? terminationDate
+      : termDate.toISOString().split('T')[0];
+
+    // Send user notification email
+    try {
+      await emailService.sendSubscriptionTerminated({
+        firstName: user.firstName,
+        email: user.email,
+        suspensionDate: suspensionDateStr,
+      });
+    } catch (error) {
+      logger.error('Failed to send subscription termination email to user', error, { userId });
+      // Don't throw - email failure shouldn't prevent termination
+    }
+
+    // Send admin notification email
+    try {
+      await emailService.sendAdminSubscriptionTerminated({
+        practitionerName: `${user.firstName} ${user.lastName}`,
+        practitionerEmail: user.email,
+        terminationDate: terminationDateStr,
+        suspensionDate: suspensionDateStr,
+      });
+    } catch (error) {
+      logger.error('Failed to send subscription termination email to admin', error, { userId });
+      // Don't throw - email failure shouldn't prevent termination
+    }
+  }
 }
 
 export interface CreateMonthlySubscriptionResult {

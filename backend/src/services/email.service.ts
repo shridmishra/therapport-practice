@@ -130,6 +130,13 @@ export interface SubscriptionTerminatedEmailData {
   suspensionDate: string;
 }
 
+export interface AdminSubscriptionTerminatedEmailData {
+  practitionerName: string;
+  practitionerEmail: string;
+  terminationDate: string;
+  suspensionDate: string;
+}
+
 export class EmailService {
   async sendWelcomeEmail(data: WelcomeEmailData): Promise<void> {
     // Escape all user-controlled values
@@ -631,6 +638,49 @@ export class EmailService {
       from: EMAIL_FROM,
       to: data.email,
       subject: 'Ad-hoc Subscription Terminated - Therapport',
+      html,
+    });
+  }
+
+  async sendAdminSubscriptionTerminated(data: AdminSubscriptionTerminatedEmailData): Promise<void> {
+    const terminationDateFormatted = formatDateSafely(data.terminationDate);
+    const suspensionDateFormatted = formatDateSafely(data.suspensionDate);
+    const escapedPractitionerName = escapeHtml(data.practitionerName);
+    const escapedPractitionerEmail = escapeHtml(data.practitionerEmail);
+    const escapedTerminationDate = escapeHtml(terminationDateFormatted);
+    const escapedSuspensionDate = escapeHtml(suspensionDateFormatted);
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Subscription Termination Notification</title>
+        </head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h1 style="color: #2c3e50;">Subscription Termination Notification</h1>
+            <p>Hello Admin,</p>
+            <p>A practitioner has terminated their ad-hoc subscription.</p>
+            <div style="background-color: #f8f9fa; border-left: 4px solid #2c3e50; padding: 15px; margin: 20px 0;">
+              <p style="margin: 0;"><strong>Practitioner:</strong> ${escapedPractitionerName}</p>
+              <p style="margin: 5px 0 0 0;"><strong>Email:</strong> ${escapedPractitionerEmail}</p>
+              <p style="margin: 5px 0 0 0;"><strong>Termination Date:</strong> ${escapedTerminationDate}</p>
+              <p style="margin: 5px 0 0 0;"><strong>Suspension Date:</strong> ${escapedSuspensionDate}</p>
+            </div>
+            <p>The practitioner can continue to use the service until the suspension date, after which their account will be suspended.</p>
+            <p>Best regards,<br>The Therapport System</p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    // Send to admin email (using same pattern as other admin emails)
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@therapport.co.uk';
+    await transporter.sendMail({
+      from: EMAIL_FROM,
+      to: adminEmail,
+      subject: 'Subscription Termination Notification - Therapport',
       html,
     });
   }
