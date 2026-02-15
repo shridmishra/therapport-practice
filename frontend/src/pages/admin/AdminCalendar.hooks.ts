@@ -236,6 +236,9 @@ export function useBookingHandlers(params: UseBookingHandlersParams) {
         const data = err.response.data as CreateBookingPaymentRequiredError | { error?: string } | undefined;
 
         // Handle payment required case (backend returns 402 with paymentRequired: true)
+        // Note: We reset submitting to false here because the API call is complete.
+        // The booking will be created by the Stripe webhook after payment succeeds,
+        // not by retrying this API call. The payment modal handles its own loading state.
         if (status === 402 && data && 'paymentRequired' in data && data.paymentRequired) {
           const paymentData = data as CreateBookingPaymentRequiredError;
           if (paymentData.clientSecret && paymentData.amountPence != null) {

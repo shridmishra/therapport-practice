@@ -213,13 +213,12 @@ export class BookingController {
         });
         return;
       }
-      const ALLOWED_BOOKING_TYPES = ['permanent_recurring', 'ad_hoc', 'free', 'internal'] as const;
+      const ALLOWED_BOOKING_TYPES = ['permanent_recurring', 'ad_hoc', 'free'] as const;
       const type = req.body.bookingType;
       if (
         type !== 'permanent_recurring' &&
         type !== 'ad_hoc' &&
-        type !== 'free' &&
-        type !== 'internal'
+        type !== 'free'
       ) {
         res.status(400).json({
           success: false,
@@ -228,10 +227,10 @@ export class BookingController {
         });
         return;
       }
-      if ((type === 'free' || type === 'internal') && req.user!.role !== 'admin') {
+      if (type === 'free' && req.user!.role !== 'admin') {
         res.status(403).json({
           success: false,
-          error: 'Only admins can create free or internal bookings',
+          error: 'Only admins can create free bookings',
         });
         return;
       }
@@ -246,7 +245,7 @@ export class BookingController {
         }
       }
       const targetUserId =
-        (type === 'free' || type === 'internal' || type === 'ad_hoc') &&
+        (type === 'free' || type === 'ad_hoc') &&
         req.user!.role === 'admin' &&
         req.body.targetUserId &&
         String(req.body.targetUserId).trim() !== ''
@@ -260,13 +259,16 @@ export class BookingController {
         res.status(400).json({ success: false, error: 'Invalid targetUserId format' });
         return;
       }
+      const isAdminRequest = req.user!.role === 'admin' && targetUserId !== req.user!.id;
       const result = await BookingService.createBooking(
         targetUserId,
         roomId,
         date,
         startTime,
         endTime,
-        type
+        type,
+        undefined,
+        isAdminRequest
       );
       if ('paymentRequired' in result && result.paymentRequired) {
         res.status(402).json({
