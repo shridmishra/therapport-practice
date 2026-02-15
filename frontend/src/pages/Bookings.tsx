@@ -156,7 +156,7 @@ function maxBookingDateString(): string {
   return target.toLocaleDateString('en-CA');
 }
 
-/** Booking types available to practitioners; admins can also use 'free' and 'internal'. */
+/** Booking types available to practitioners; admins can also use 'free'. */
 const PRACTITIONER_BOOKING_TYPES = [
   { value: 'ad_hoc' as const, label: 'Ad hoc' },
   { value: 'permanent_recurring' as const, label: 'Recurring' },
@@ -164,7 +164,6 @@ const PRACTITIONER_BOOKING_TYPES = [
 const ALL_BOOKING_TYPES = [
   ...PRACTITIONER_BOOKING_TYPES,
   { value: 'free' as const, label: 'Free' },
-  { value: 'internal' as const, label: 'Internal' },
 ];
 
 function formatMonthKeyToLabel(month: string): string {
@@ -208,7 +207,7 @@ export const Bookings: React.FC = () => {
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('10:00');
   const [bookingType, setBookingType] = useState<
-    'ad_hoc' | 'permanent_recurring' | 'free' | 'internal'
+    'ad_hoc' | 'permanent_recurring' | 'free'
   >('ad_hoc');
 
   const fetchRooms = useCallback(
@@ -375,7 +374,7 @@ export const Bookings: React.FC = () => {
     user?.role === 'admin' ? ALL_BOOKING_TYPES : PRACTITIONER_BOOKING_TYPES;
 
   useEffect(() => {
-    if (user?.role !== 'admin' && (bookingType === 'free' || bookingType === 'internal')) {
+    if (user?.role !== 'admin' && bookingType === 'free') {
       setBookingType('ad_hoc');
     }
   }, [user?.role, bookingType]);

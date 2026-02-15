@@ -323,7 +323,7 @@ export const practitionerApi = {
     date: string;
     startTime: string;
     endTime: string;
-    bookingType: 'permanent_recurring' | 'ad_hoc' | 'free' | 'internal';
+    bookingType: 'permanent_recurring' | 'ad_hoc' | 'free';
     targetUserId?: string;
   }) => {
     return api.post<CreateBookingResponse>('/practitioner/bookings', data);

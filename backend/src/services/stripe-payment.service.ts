@@ -183,7 +183,13 @@ export async function createCheckoutSessionForSubscription(
   const stripe = getStripe();
   // Get the monthly price amount from the priceId to create a custom line item with the correct name
   const price = await stripe.prices.retrieve(params.priceId);
-  const monthlyAmountPence = price.unit_amount ?? 0;
+  if (price.unit_amount === null) {
+    throw new Error(
+      `Price ${params.priceId} uses tiered or metered billing (unit_amount is null). ` +
+      'Only fixed-amount prices are supported for monthly subscriptions.'
+    );
+  }
+  const monthlyAmountPence = price.unit_amount;
   
   const lineItems: Array<
     | { price: string; quantity: number }

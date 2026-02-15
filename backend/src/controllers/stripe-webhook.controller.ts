@@ -188,12 +188,28 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
           const startTime = paymentIntent.metadata.startTime;
           const endTime = paymentIntent.metadata.endTime;
           // Validate bookingType to prevent invalid values from reaching createBooking
+          // Note: 'free' bookings bypass payment, so they should never appear in pay_the_difference flow
           const rawBookingType = paymentIntent.metadata.bookingType;
-          const allowedTypes = ['permanent_recurring', 'ad_hoc', 'free'] as const;
+          const allowedTypes = ['permanent_recurring', 'ad_hoc'] as const;
           const isValidType = rawBookingType && allowedTypes.includes(rawBookingType as typeof allowedTypes[number]);
           const bookingType: 'permanent_recurring' | 'ad_hoc' | 'free' = isValidType
-            ? (rawBookingType as 'permanent_recurring' | 'ad_hoc' | 'free')
+            ? (rawBookingType as 'permanent_recurring' | 'ad_hoc')
             : 'ad_hoc';
+          
+          if (!isValidType) {
+            logger.warn('Invalid or missing bookingType in pay_the_difference payment intent, defaulting to ad_hoc', {
+              eventId: event.id,
+              paymentIntentId: paymentIntent.id,
+              userId,
+              rawBookingType: rawBookingType || 'missing',
+            });
+          } else if (rawBookingType === 'free') {
+            logger.warn('Unexpected "free" bookingType in pay_the_difference payment intent, defaulting to ad_hoc', {
+              eventId: event.id,
+              paymentIntentId: paymentIntent.id,
+              userId,
+            });
+          }
           const amountReceived = paymentIntent.amount_received;
           if (!date || !startTime || !endTime || amountReceived == null) {
             logger.warn('Pay-the-difference metadata incomplete', {
@@ -238,6 +254,9 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
             // Convert amountReceived (pence) to GBP for passing to createBooking
             // Note: Credits are NOT granted for new bookings - payment appears in transaction history via booking record
             const paymentAmountGBP = amountReceived / 100;
+            // Preserve admin context from payment intent metadata for correct error messages
+            const isAdminRequest = paymentIntent.metadata.isAdminRequest === 'true';
+            const isAdmin = paymentIntent.metadata.isAdmin === 'true';
             const result = await BookingService.createBooking(
               userId,
               roomId,
@@ -245,7 +264,9 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
               startTime,
               endTime,
               bookingType,
-              paymentAmountGBP
+              paymentAmountGBP,
+              isAdminRequest,
+              isAdmin
             );
             if ('paymentRequired' in result && result.paymentRequired) {
               logger.error('Pay-the-difference createBooking returned paymentRequired', {
@@ -323,7 +344,9 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
               updates.endTime != null;
             if (hasUpdates) {
               try {
-                await BookingService.updateBooking(bookingId, userId, false, updates);
+                // Preserve admin context from payment intent metadata for correct error messages
+                const isAdmin = paymentIntent.metadata.isAdmin === 'true';
+                await BookingService.updateBooking(bookingId, userId, isAdmin, updates);
                 logger.info('Pay-the-difference-update booking update completed', {
                   eventId: event.id,
                   userId,

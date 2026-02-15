@@ -1,5 +1,8 @@
 import { transporter, EMAIL_FROM } from '../config/email';
 
+// Shared admin email constant for all admin notifications
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'info@therapport.co.uk';
+
 /**
  * Escapes HTML special characters to prevent HTML injection attacks
  */
@@ -371,8 +374,8 @@ export class EmailService {
       </html>
     `;
 
-    // Send to admin email (you may want to make this configurable)
-    const adminEmail = process.env.ADMIN_EMAIL || 'admin@therapport.co.uk';
+    // Send to admin email
+    const adminEmail = ADMIN_EMAIL;
 
     await transporter.sendMail({
       from: EMAIL_FROM,
@@ -432,7 +435,7 @@ export class EmailService {
       </html>
     `;
 
-    const adminEmail = process.env.ADMIN_EMAIL || 'info@therapport.co.uk';
+    const adminEmail = ADMIN_EMAIL;
 
     await transporter.sendMail({
       from: EMAIL_FROM,
@@ -675,8 +678,8 @@ export class EmailService {
       </html>
     `;
 
-    // Send to admin email (using same pattern as other admin emails)
-    const adminEmail = process.env.ADMIN_EMAIL || 'admin@therapport.co.uk';
+    // Send to admin email
+    const adminEmail = ADMIN_EMAIL;
     await transporter.sendMail({
       from: EMAIL_FROM,
       to: adminEmail,

@@ -533,10 +533,11 @@ export async function createBooking(
   endTime: string,
   bookingType: 'permanent_recurring' | 'ad_hoc' | 'free',
   paymentAmountMade?: number,
-  isAdminRequest?: boolean
+  isAdminRequest?: boolean,
+  isAdmin?: boolean
 ): Promise<CreateBookingResult> {
-  // For free bookings created by admin, skip membership check
-  const skipMembershipCheck = bookingType === 'free' && isAdminRequest;
+  // For free bookings created by admin (for themselves or others), skip membership check
+  const skipMembershipCheck = bookingType === 'free' && (isAdmin === true || isAdminRequest === true);
   const validation = await validateBookingRequest(userId, roomId, date, startTime, endTime, skipMembershipCheck);
   if (!validation.valid) throw new BookingValidationError(validation.error!);
 
@@ -558,7 +559,8 @@ export async function createBooking(
   const todayStr = todayUtcString();
 
   // Free bookings are completely free - skip all credit/voucher/payment logic
-  if (bookingType === 'free' && isAdminRequest) {
+  // Allow free bookings when created by admin 
+  if (bookingType === 'free' && (isAdmin === true || isAdminRequest === true)) {
     const result = await db.transaction(async (tx) => {
       // For free bookings created by admin, create membership if it doesn't exist
       let [membership] = await tx
@@ -569,12 +571,16 @@ export async function createBooking(
       
       if (!membership) {
         // Create a minimal ad_hoc membership for free bookings
+        // Set subscriptionEndDate to a past date so this placeholder membership
+        // is never treated as an active membership by canUserBook or similar checks
+        // This membership is only for this one-off free booking, not for ongoing access
         [membership] = await tx
           .insert(memberships)
           .values({
             userId,
             type: 'ad_hoc',
             marketingAddon: false,
+            subscriptionEndDate: '1970-01-01', // Past date to prevent future bookings
           })
           .returning();
       }
@@ -721,6 +727,8 @@ export async function createBooking(
           endTime,
           bookingType,
           expectedAmountPence: String(amountToPayPence),
+          isAdminRequest: String(isAdminRequest ?? false),
+          isAdmin: String(isAdmin ?? false),
         },
         description: 'Pay the difference for room booking',
       });
@@ -1365,6 +1373,7 @@ export async function updateBooking(
           startTime: newStartTime,
           endTime: newEndTime,
           expectedAmountPence: String(amountToPayPence),
+          isAdmin: String(isAdmin),
         },
         description: 'Pay the difference for booking update',
       });
