@@ -164,7 +164,7 @@ export function useBookingHandlers(params: UseBookingHandlersParams) {
   const [modifyError, setModifyError] = useState<string | null>(null);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentClientSecret, setPaymentClientSecret] = useState<string | null>(null);
-  const [paymentAmountPence, setPaymentAmountPence] = useState<number | undefined>(undefined);
+  const [paymentAmountPence, setPaymentAmountPence] = useState<number | null>(null);
 
   useEffect(() => {
     if (!selectedRoomId || endTime <= startTime) {
