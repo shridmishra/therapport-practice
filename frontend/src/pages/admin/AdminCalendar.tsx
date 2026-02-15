@@ -512,7 +512,7 @@ export const AdminCalendar: React.FC = () => {
           setPaymentModalOpen(open);
           if (!open) {
             setPaymentClientSecret(null);
-            setPaymentAmountPence(undefined);
+            setPaymentAmountPence(null);
           }
         }}
         clientSecret={paymentClientSecret}
@@ -521,7 +521,7 @@ export const AdminCalendar: React.FC = () => {
         onSuccess={() => {
           setPaymentModalOpen(false);
           setPaymentClientSecret(null);
-          setPaymentAmountPence(undefined);
+          setPaymentAmountPence(null);
           setCreateSuccess('Booking created.');
           setCreateError(null);
           fetchCalendar();
