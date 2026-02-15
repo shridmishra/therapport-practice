@@ -675,7 +675,7 @@ export const Bookings: React.FC = () => {
                         <th
                           key={r.id}
                           className="border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 p-1.5 text-center text-xs font-medium text-slate-700 dark:text-slate-300"
-                          style={{ width: `${100 / calendarRooms.length}%` }}
+                          style={{ width: `calc((100% - 60px) / ${calendarRooms.length})` }}
                         >
                           {r.name}
                         </th>

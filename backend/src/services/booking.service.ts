@@ -529,7 +529,8 @@ export async function createBooking(
   startTime: string,
   endTime: string,
   bookingType: 'permanent_recurring' | 'ad_hoc' | 'free' | 'internal' = 'ad_hoc',
-  paymentAmountMade?: number
+  paymentAmountMade?: number,
+  isAdminRequest?: boolean
 ): Promise<CreateBookingResult> {
   const validation = await validateBookingRequest(userId, roomId, date, startTime, endTime);
   if (!validation.valid) throw new BookingValidationError(validation.error!);
@@ -619,8 +620,9 @@ export async function createBooking(
       // For ad_hoc members, require active subscription to pay the difference
       // For permanent members, allow pay-as-you-go even without active subscription
       if (membership.type === 'ad_hoc' && !hasActiveSubscription(membership)) {
+        const subject = isAdminRequest ? 'Practitioner' : 'You';
         throw new BookingValidationError(
-          'You must have an active subscription to pay the difference. Please purchase a subscription first.'
+          `${subject} must have an active subscription to pay the difference. Please purchase a subscription first.`
         );
       }
       
@@ -1166,8 +1168,9 @@ export async function updateBooking(
             // For ad_hoc members, require active subscription to pay the difference
             // For permanent members, allow pay-as-you-go even without active subscription
             if (membership.type === 'ad_hoc' && !hasActiveSubscription(membership)) {
+              const subject = isAdmin ? 'Practitioner' : 'You';
               throw new BookingValidationError(
-                'You must have an active subscription to pay the difference. Please purchase a subscription first.'
+                `${subject} must have an active subscription to pay the difference. Please purchase a subscription first.`
               );
             }
             
