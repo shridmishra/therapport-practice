@@ -189,6 +189,12 @@ export async function createCheckoutSessionForSubscription(
       'Only fixed-amount prices are supported for monthly subscriptions.'
     );
   }
+  if (price.unit_amount === 0) {
+    throw new Error(
+      `Price ${params.priceId} has zero unit_amount. ` +
+      'Zero-amount subscriptions are not supported.'
+    );
+  }
   const monthlyAmountPence = price.unit_amount;
   
   const lineItems: Array<{

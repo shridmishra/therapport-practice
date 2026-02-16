@@ -560,7 +560,13 @@ export async function createBooking(
 
   // Free bookings are completely free - skip all credit/voucher/payment logic
   // Allow free bookings when created by admin 
-  if (bookingType === 'free' && (isAdmin === true || isAdminRequest === true)) {
+  if (bookingType === 'free') {
+    // Guard: Only admins can create free bookings
+    if (!isAdmin && !isAdminRequest) {
+      throw new BookingValidationError('Only admins can create free bookings');
+    }
+    // Continue with free booking logic for admins
+    if (isAdmin === true || isAdminRequest === true) {
     const result = await db.transaction(async (tx) => {
       // For free bookings created by admin, create membership if it doesn't exist
       let [membership] = await tx
@@ -580,6 +586,7 @@ export async function createBooking(
             userId,
             type: 'ad_hoc',
             marketingAddon: false,
+            subscriptionType: null, // Explicitly null to prevent active subscription checks
             subscriptionEndDate: '1970-01-01', // Past date to prevent future bookings
           })
           .returning();
@@ -635,6 +642,7 @@ export async function createBooking(
     }
 
     return { id: result.id };
+    }
   }
 
   const [membership] = await db
