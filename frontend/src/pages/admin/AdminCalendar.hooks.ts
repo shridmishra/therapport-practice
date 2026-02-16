@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { AxiosError } from 'axios';
+import axios from 'axios';
 import {
   practitionerApi,
   adminApi,
@@ -230,16 +230,22 @@ export function useBookingHandlers(params: UseBookingHandlersParams) {
         setCreateError('Failed to create booking');
       }
     } catch (err: unknown) {
-      // Use AxiosError for type narrowing and verify HTTP status code
-      if (err instanceof AxiosError && err.response) {
+      // Use axios.isAxiosError for type narrowing and verify HTTP status code
+      if (axios.isAxiosError(err) && err.response) {
         const status = err.response.status;
-        const data = err.response.data as CreateBookingPaymentRequiredError | { error?: string } | undefined;
+        const data = err.response.data;
 
         // Handle payment required case (backend returns 402 with paymentRequired: true)
         // Note: We reset submitting to false here because the API call is complete.
         // The booking will be created by the Stripe webhook after payment succeeds,
         // not by retrying this API call. The payment modal handles its own loading state.
-        if (status === 402 && data && 'paymentRequired' in data && data.paymentRequired) {
+        if (
+          status === 402 &&
+          typeof data === 'object' &&
+          data !== null &&
+          'paymentRequired' in data &&
+          (data as CreateBookingPaymentRequiredError).paymentRequired
+        ) {
           const paymentData = data as CreateBookingPaymentRequiredError;
           if (paymentData.clientSecret && paymentData.amountPence != null) {
             setCreateError(null);
@@ -255,7 +261,10 @@ export function useBookingHandlers(params: UseBookingHandlersParams) {
         }
 
         // Handle regular error case
-        const errorMsg = (data && 'error' in data ? data.error : undefined) ?? 'Failed to create booking';
+        const errorMsg =
+          typeof data === 'object' && data !== null && 'error' in data
+            ? String(data.error)
+            : 'Failed to create booking';
         setCreateError(errorMsg);
       } else {
         setCreateError('Failed to create booking');

@@ -181,13 +181,36 @@ export async function createCheckoutSessionForSubscription(
   params: CreateCheckoutSessionForSubscriptionParams
 ): Promise<CreateCheckoutSessionForSubscriptionResult> {
   const stripe = getStripe();
-  const lineItems: Array<
-    | { price: string; quantity: number }
-    | {
-        price_data: { currency: string; unit_amount: number; product_data: { name: string } };
-        quantity: number;
-      }
-  > = [{ price: params.priceId, quantity: 1 }];
+  // Get the monthly price amount from the priceId to create a custom line item with the correct name
+  const price = await stripe.prices.retrieve(params.priceId);
+  if (price.unit_amount === null) {
+    throw new Error(
+      `Price ${params.priceId} uses tiered or metered billing (unit_amount is null). ` +
+      'Only fixed-amount prices are supported for monthly subscriptions.'
+    );
+  }
+  if (price.unit_amount === 0) {
+    throw new Error(
+      `Price ${params.priceId} has zero unit_amount. ` +
+      'Zero-amount subscriptions are not supported.'
+    );
+  }
+  const monthlyAmountPence = price.unit_amount;
+  
+  const lineItems: Array<{
+    price_data: { currency: string; unit_amount: number; product_data: { name: string }; recurring?: { interval: 'month' } };
+    quantity: number;
+  }> = [
+    {
+      price_data: {
+        currency: 'gbp',
+        unit_amount: monthlyAmountPence,
+        product_data: { name: 'Monthly membership (next month)' },
+        recurring: { interval: 'month' },
+      },
+      quantity: 1,
+    },
+  ];
   if (params.proratedAmountPence != null && params.proratedAmountPence > 0) {
     lineItems.unshift({
       price_data: {
