@@ -191,13 +191,10 @@ export async function createCheckoutSessionForSubscription(
   }
   const monthlyAmountPence = price.unit_amount;
   
-  const lineItems: Array<
-    | { price: string; quantity: number }
-    | {
-        price_data: { currency: string; unit_amount: number; product_data: { name: string }; recurring?: { interval: 'month' } };
-        quantity: number;
-      }
-  > = [
+  const lineItems: Array<{
+    price_data: { currency: string; unit_amount: number; product_data: { name: string }; recurring?: { interval: 'month' } };
+    quantity: number;
+  }> = [
     {
       price_data: {
         currency: 'gbp',

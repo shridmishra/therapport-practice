@@ -197,18 +197,20 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
             : 'ad_hoc';
           
           if (!isValidType) {
-            logger.warn('Invalid or missing bookingType in pay_the_difference payment intent, defaulting to ad_hoc', {
-              eventId: event.id,
-              paymentIntentId: paymentIntent.id,
-              userId,
-              rawBookingType: rawBookingType || 'missing',
-            });
-          } else if (rawBookingType === 'free') {
-            logger.warn('Unexpected "free" bookingType in pay_the_difference payment intent, defaulting to ad_hoc', {
-              eventId: event.id,
-              paymentIntentId: paymentIntent.id,
-              userId,
-            });
+            if (rawBookingType === 'free') {
+              logger.warn('Unexpected "free" bookingType in pay_the_difference payment intent, defaulting to ad_hoc', {
+                eventId: event.id,
+                paymentIntentId: paymentIntent.id,
+                userId,
+              });
+            } else {
+              logger.warn('Invalid or missing bookingType in pay_the_difference payment intent, defaulting to ad_hoc', {
+                eventId: event.id,
+                paymentIntentId: paymentIntent.id,
+                userId,
+                rawBookingType: rawBookingType || 'missing',
+              });
+            }
           }
           const amountReceived = paymentIntent.amount_received;
           if (!date || !startTime || !endTime || amountReceived == null) {

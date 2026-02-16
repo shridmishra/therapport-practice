@@ -623,7 +623,7 @@ export async function createBooking(
           bookingDate: date,
           startTime: startTimeDb,
           endTime: endTimeDb,
-          totalPrice: totalPrice.toFixed(2),
+          totalPrice: '0.00', // Free bookings are free, don't show calculated price
           creditUsed: undefined, // No credits used for free bookings
         })
         .catch((err) =>
@@ -912,12 +912,13 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
       booking.creditUsed === null
         ? parseFloat(booking.totalPrice.toString())
         : parseFloat(String(booking.creditUsed ?? 0));
+    const cancellationReason = isAdmin ? 'Cancelled by admin' : 'Cancelled by user';
     await tx
       .update(bookings)
       .set({
         status: 'cancelled',
         cancelledAt: new Date(),
-        cancellationReason: 'Cancelled by user',
+        cancellationReason,
         updatedAt: new Date(),
       })
       .where(eq(bookings.id, bookingId));
