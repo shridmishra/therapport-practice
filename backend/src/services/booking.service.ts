@@ -831,11 +831,21 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
     const endTimeStr = formatTimeHHMM(booking.endTime as string | Date);
     const durationHours = timeToHours(endTimeStr) - timeToHours(startTimeStr);
     
+    // Guard against invalid duration (should not happen for valid bookings, but defensive programming)
+    if (durationHours <= 0) {
+      logger.warn('Invalid durationHours in cancellation, using safe fallback', {
+        bookingId,
+        startTime: startTimeStr,
+        endTime: endTimeStr,
+        durationHours,
+      });
+    }
+    
     // Calculate amount covered by vouchers using the same proportional cents-based calculation as at booking creation
     // This ensures consistency and avoids 1-cent rounding discrepancies
     const totalPriceCents = Math.round(totalPrice * 100);
     const voucherCoveredCents =
-      voucherHoursUsed >= durationHours
+      durationHours <= 0 || voucherHoursUsed >= durationHours
         ? totalPriceCents
         : Math.round((totalPriceCents * voucherHoursUsed) / durationHours);
     const amountCoveredByVouchers = voucherCoveredCents / 100;
