@@ -565,8 +565,7 @@ export async function createBooking(
     if (!isAdmin && !isAdminRequest) {
       throw new BookingValidationError('Only admins can create free bookings');
     }
-    // Continue with free booking logic for admins
-    if (isAdmin === true || isAdminRequest === true) {
+    // Continue with free booking logic for admins (guard ensures at least one is truthy)
     const result = await db.transaction(async (tx) => {
       // For free bookings created by admin, create membership if it doesn't exist
       let [membership] = await tx
@@ -642,7 +641,6 @@ export async function createBooking(
     }
 
     return { id: result.id };
-    }
   }
 
   const [membership] = await db
