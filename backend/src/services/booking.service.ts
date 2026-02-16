@@ -936,11 +936,13 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
     
     // Calculate amount covered by vouchers using the same proportional cents-based calculation as at booking creation
     // This ensures consistency and avoids 1-cent rounding discrepancies
+    // Use the exact same formula as creation: compute creditAmountCents first, then derive voucherCoveredCents
     const totalPriceCents = Math.round(totalPrice * 100);
-    const voucherCoveredCents =
+    const creditAmountCents =
       durationHours <= 0 || voucherHoursUsed >= durationHours
-        ? totalPriceCents
-        : Math.round((totalPriceCents * voucherHoursUsed) / durationHours);
+        ? 0
+        : Math.round((totalPriceCents * (durationHours - voucherHoursUsed)) / durationHours);
+    const voucherCoveredCents = totalPriceCents - creditAmountCents;
     const amountCoveredByVouchers = voucherCoveredCents / 100;
     
     // Calculate Stripe payment amount: totalPrice - creditUsed - amountCoveredByVouchers
