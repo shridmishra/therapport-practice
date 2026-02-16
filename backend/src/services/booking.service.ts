@@ -821,10 +821,22 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
       }
     }
 
-    const refundAmount =
-      booking.creditUsed === null
-        ? parseFloat(booking.totalPrice.toString())
-        : parseFloat(String(booking.creditUsed ?? 0));
+    // Calculate refund amounts: credits used + Stripe payment made
+    const totalPrice = parseFloat(booking.totalPrice.toString());
+    const creditUsed = parseFloat(String(booking.creditUsed ?? 0));
+    const voucherHoursUsed = parseFloat(String(booking.voucherHoursUsed ?? 0));
+    const pricePerHour = parseFloat(booking.pricePerHour.toString());
+    
+    // Calculate amount covered by vouchers (used to determine Stripe payment, not refunded)
+    const amountCoveredByVouchers = voucherHoursUsed * pricePerHour;
+    
+    // Calculate Stripe payment amount: totalPrice - creditUsed - amountCoveredByVouchers
+    // This represents the amount paid via "pay the difference" (will be refunded as credits)
+    const stripePaymentAmount = Math.max(0, totalPrice - creditUsed - amountCoveredByVouchers);
+    
+    // Total refund = credits used + Stripe payment made
+    const totalRefund = creditUsed + stripePaymentAmount;
+    
     await tx
       .update(bookings)
       .set({
@@ -835,7 +847,7 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
       })
       .where(eq(bookings.id, bookingId));
 
-    if (refundAmount > 0) {
+    if (totalRefund > 0) {
       const bookingDate = String(booking.bookingDate);
       if (!/^\d{4}-\d{2}(-\d{2})?$/.test(bookingDate)) {
         throw new BookingValidationError(
@@ -856,14 +868,16 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
       logger.info('Manual end-of-month grant created for booking cancellation', {
         bookingId,
         bookingDate: booking.bookingDate,
-        refundAmount,
+        refundAmount: totalRefund,
+        creditRefund: creditUsed,
+        stripePaymentRefund: stripePaymentAmount,
         expiryDate,
         grantType: 'manual',
       });
       await CreditTransactionService.grantCreditsWithinTransaction(
         tx,
         userId,
-        refundAmount,
+        totalRefund,
         expiryDate,
         'manual',
         undefined,
@@ -879,7 +893,7 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
       bookingDate: String(booking.bookingDate),
       startTime: formatTimeForEmail(booking.startTime as string | Date),
       endTime: formatTimeForEmail(booking.endTime as string | Date),
-      refundAmount: refundAmount.toFixed(2),
+      refundAmount: totalRefund.toFixed(2),
     };
   });
 
