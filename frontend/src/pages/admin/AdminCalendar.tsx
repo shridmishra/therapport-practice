@@ -248,7 +248,7 @@ export const AdminCalendar: React.FC = () => {
                                       const bookingId = booking.id;
                                       return (
                                         <div className="flex flex-wrap gap-1 mt-1">
-                                          <Button
+                                          {/* <Button
                                             size="sm"
                                             variant="outline"
                                             className="h-6 text-xs"
@@ -263,7 +263,7 @@ export const AdminCalendar: React.FC = () => {
                                             }
                                           >
                                             Modify
-                                          </Button>
+                                          </Button> */}
                                           <Button
                                             size="sm"
                                             variant="destructive"
@@ -510,6 +510,8 @@ export const AdminCalendar: React.FC = () => {
         open={paymentModalOpen}
         onOpenChange={(open) => {
           setPaymentModalOpen(open);
+          // Only reset payment state on user-initiated close (when closing without success)
+          // onSuccess will handle reset when payment succeeds
           if (!open) {
             setPaymentClientSecret(null);
             setPaymentAmountPence(null);
@@ -519,9 +521,9 @@ export const AdminCalendar: React.FC = () => {
         amountPence={paymentAmountPence}
         title="Pay the difference to complete your booking"
         onSuccess={() => {
-          setPaymentModalOpen(false);
-          setPaymentClientSecret(null);
-          setPaymentAmountPence(null);
+          // Without removal: Payment state gets reset twice (redundant)
+          // PaymentModal.handleSuccess calls onOpenChange(false) then onSuccess()
+          // So onOpenChange already reset the payment state, we just need to handle success actions
           setCreateSuccess('Booking created.');
           setCreateError(null);
           fetchCalendar();

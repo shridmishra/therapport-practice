@@ -453,10 +453,13 @@ export async function validateBookingRequest(
   roomId: string,
   date: string,
   startTime: string,
-  endTime: string
+  endTime: string,
+  skipMembershipCheck?: boolean //allow free bookings without membership check
 ): Promise<{ valid: boolean; error?: string }> {
-  const can = await canUserBook(userId);
-  if (!can.ok) return { valid: false, error: can.reason };
+  if (!skipMembershipCheck) {
+    const can = await canUserBook(userId);
+    if (!can.ok) return { valid: false, error: can.reason };
+  }
 
   const today = todayUtcString();
   if (date < today) return { valid: false, error: 'Booking date must be today or in the future' };
@@ -530,9 +533,12 @@ export async function createBooking(
   endTime: string,
   bookingType: 'permanent_recurring' | 'ad_hoc' | 'free',
   paymentAmountMade?: number,
-  isAdminRequest?: boolean
+  isAdminRequest?: boolean,
+  isAdmin?: boolean
 ): Promise<CreateBookingResult> {
-  const validation = await validateBookingRequest(userId, roomId, date, startTime, endTime);
+  // For free bookings created by admin (for themselves or others), skip membership check
+  const skipMembershipCheck = bookingType === 'free' && (isAdmin === true || isAdminRequest === true);
+  const validation = await validateBookingRequest(userId, roomId, date, startTime, endTime, skipMembershipCheck);
   if (!validation.valid) throw new BookingValidationError(validation.error!);
 
   const { room, locationName } = await getRoomWithLocation(roomId);
@@ -551,6 +557,91 @@ export async function createBooking(
     throw new BookingValidationError('Invalid time string');
   }
   const todayStr = todayUtcString();
+
+  // Free bookings are completely free - skip all credit/voucher/payment logic
+  // Allow free bookings when created by admin 
+  if (bookingType === 'free') {
+    // Guard: Only admins can create free bookings
+    if (!isAdmin && !isAdminRequest) {
+      throw new BookingValidationError('Only admins can create free bookings');
+    }
+    // Continue with free booking logic for admins (guard ensures at least one is truthy)
+    const result = await db.transaction(async (tx) => {
+      // For free bookings created by admin, create membership if it doesn't exist
+      let [membership] = await tx
+        .select()
+        .from(memberships)
+        .where(eq(memberships.userId, userId))
+        .limit(1);
+      
+      if (!membership) {
+        // Create a minimal ad_hoc membership for free bookings
+        // Set subscriptionEndDate to a past date so this placeholder membership
+        // is never treated as an active membership by canUserBook or similar checks
+        // This membership is only for this one-off free booking, not for ongoing access
+        [membership] = await tx
+          .insert(memberships)
+          .values({
+            userId,
+            type: 'ad_hoc',
+            marketingAddon: false,
+            subscriptionType: null, // Explicitly null to prevent active subscription checks
+            subscriptionEndDate: '1970-01-01', // Past date to prevent future bookings
+          })
+          .returning();
+      }
+
+      const [created] = await tx
+        .insert(bookings)
+        .values({
+          userId,
+          roomId,
+          membershipId: membership.id,
+          bookingDate: date,
+          startTime: startTimeDb,
+          endTime: endTimeDb,
+          pricePerHour: pricePerHour.toFixed(2),
+          totalPrice: totalPrice.toFixed(2),
+          creditUsed: '0.00', // Free bookings use no credits
+          voucherHoursUsed: '0.00', // Free bookings use no voucher hours
+          status: 'confirmed',
+          bookingType,
+        })
+        .returning({ id: bookings.id });
+      if (!created) throw new BookingValidationError('Failed to create booking');
+
+      return { id: created.id, creditUsed: 0 };
+    });
+
+    // Send confirmation email (fire-and-forget; do not fail the request if email fails)
+    const [userRow] = await db
+      .select({ email: users.email, firstName: users.firstName })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    if (userRow) {
+      emailService
+        .sendBookingConfirmation({
+          firstName: userRow.firstName,
+          email: userRow.email,
+          roomName: room.name,
+          locationName,
+          bookingDate: date,
+          startTime: startTimeDb,
+          endTime: endTimeDb,
+          totalPrice: '0.00', // Free bookings are free, don't show calculated price
+          creditUsed: undefined, // No credits used for free bookings
+        })
+        .catch((err) =>
+          logger.error('Failed to send booking confirmation email', err, {
+            userId,
+            bookingId: result.id,
+          })
+        );
+    }
+
+    return { id: result.id };
+  }
 
   const [membership] = await db
     .select()
@@ -642,6 +733,8 @@ export async function createBooking(
           endTime,
           bookingType,
           expectedAmountPence: String(amountToPayPence),
+          isAdminRequest: String(isAdminRequest ?? false),
+          isAdmin: String(isAdmin ?? false),
         },
         description: 'Pay the difference for room booking',
       });
@@ -859,12 +952,13 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
     // Round to 2 decimal places to avoid floating-point drift
     const totalRefund = Math.round((creditUsed + stripePaymentAmount) * 100) / 100;
     
+    const cancellationReason = isAdmin ? 'Cancelled by admin' : 'Cancelled by user';
     await tx
       .update(bookings)
       .set({
         status: 'cancelled',
         cancelledAt: new Date(),
-        cancellationReason: 'Cancelled by user',
+        cancellationReason,
         updatedAt: new Date(),
       })
       .where(eq(bookings.id, bookingId));
@@ -1324,6 +1418,7 @@ export async function updateBooking(
           startTime: newStartTime,
           endTime: newEndTime,
           expectedAmountPence: String(amountToPayPence),
+          isAdmin: String(isAdmin),
         },
         description: 'Pay the difference for booking update',
       });

@@ -260,6 +260,7 @@ export class BookingController {
         return;
       }
       const isAdminRequest = req.user!.role === 'admin' && targetUserId !== req.user!.id;
+      const isAdmin = req.user!.role === 'admin';
       const result = await BookingService.createBooking(
         targetUserId,
         roomId,
@@ -268,7 +269,8 @@ export class BookingController {
         endTime,
         type,
         undefined,
-        isAdminRequest
+        isAdminRequest,
+        isAdmin
       );
       if ('paymentRequired' in result && result.paymentRequired) {
         res.status(402).json({
