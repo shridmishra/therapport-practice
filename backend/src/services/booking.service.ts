@@ -528,8 +528,9 @@ export async function createBooking(
   date: string,
   startTime: string,
   endTime: string,
-  bookingType: 'permanent_recurring' | 'ad_hoc' | 'free' | 'internal' = 'ad_hoc',
-  paymentAmountMade?: number
+  bookingType: 'permanent_recurring' | 'ad_hoc' | 'free',
+  paymentAmountMade?: number,
+  isAdminRequest?: boolean
 ): Promise<CreateBookingResult> {
   const validation = await validateBookingRequest(userId, roomId, date, startTime, endTime);
   if (!validation.valid) throw new BookingValidationError(validation.error!);
@@ -619,8 +620,9 @@ export async function createBooking(
       // For ad_hoc members, require active subscription to pay the difference
       // For permanent members, allow pay-as-you-go even without active subscription
       if (membership.type === 'ad_hoc' && !hasActiveSubscription(membership)) {
+        const subject = isAdminRequest ? 'Practitioner' : 'You';
         throw new BookingValidationError(
-          'You must have an active subscription to pay the difference. Please purchase a subscription first.'
+          `${subject} must have an active subscription to pay the difference. Please purchase a subscription first.`
         );
       }
       
@@ -769,7 +771,7 @@ export async function createBooking(
  * Cancel a booking and refund credits (full amount as manual credit for PR3; voucher hours not refunded).
  * Booking update and credit grant run in a single transaction so both succeed or both roll back.
  */
-export async function cancelBooking(bookingId: string, userId: string): Promise<void> {
+export async function cancelBooking(bookingId: string, userId: string, isAdmin: boolean = false): Promise<void> {
   let emailData: {
     firstName: string;
     email: string;
@@ -802,18 +804,21 @@ export async function cancelBooking(bookingId: string, userId: string): Promise<
     if (booking.status === 'cancelled')
       throw new BookingValidationError('Booking is already cancelled');
 
-    const bookingDateStr = String(booking.bookingDate);
-    const startTimeStr = formatTimeHHMM(booking.startTime as string | Date);
-    const [y, mo, d] = bookingDateStr.split('-').map(Number);
-    const [hh, mm] = startTimeStr.split(':').map(Number);
-    const bookingStartLocal = new Date(y, mo - 1, d, hh, mm, 0);
-    const bookingStartUtc = fromZonedTime(bookingStartLocal, 'Europe/London');
-    const now = new Date();
-    const minCancelBy = bookingStartUtc.getTime() - 24 * 60 * 60 * 1000;
-    if (now.getTime() > minCancelBy) {
-      throw new BookingValidationError(
-        'Cancellation with less than 24 hours notice is not permitted'
-      );
+    // Only enforce 24-hour restriction for non-admin users
+    if (!isAdmin) {
+      const bookingDateStr = String(booking.bookingDate);
+      const startTimeStr = formatTimeHHMM(booking.startTime as string | Date);
+      const [y, mo, d] = bookingDateStr.split('-').map(Number);
+      const [hh, mm] = startTimeStr.split(':').map(Number);
+      const bookingStartLocal = new Date(y, mo - 1, d, hh, mm, 0);
+      const bookingStartUtc = fromZonedTime(bookingStartLocal, 'Europe/London');
+      const now = new Date();
+      const minCancelBy = bookingStartUtc.getTime() - 24 * 60 * 60 * 1000;
+      if (now.getTime() > minCancelBy) {
+        throw new BookingValidationError(
+          'Cancellation with less than 24 hours notice is not permitted'
+        );
+      }
     }
 
     const refundAmount =
@@ -1163,8 +1168,9 @@ export async function updateBooking(
             // For ad_hoc members, require active subscription to pay the difference
             // For permanent members, allow pay-as-you-go even without active subscription
             if (membership.type === 'ad_hoc' && !hasActiveSubscription(membership)) {
+              const subject = isAdmin ? 'Practitioner' : 'You';
               throw new BookingValidationError(
-                'You must have an active subscription to pay the difference. Please purchase a subscription first.'
+                `${subject} must have an active subscription to pay the difference. Please purchase a subscription first.`
               );
             }
             

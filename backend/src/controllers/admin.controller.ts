@@ -16,7 +16,7 @@ import {
   emailChangeRequests,
   rooms,
 } from '../db/schema';
-import { eq, and, or, not, ilike, aliasedTable, isNull, sql, SQL, count, gte, lte, lt, desc } from 'drizzle-orm';
+import { eq, and, or, not, ilike, aliasedTable, isNull, sql, SQL, count, gte, lte, lt, desc, ne } from 'drizzle-orm';
 import { logger } from '../utils/logger.util';
 import { z, ZodError } from 'zod';
 import { FileService } from '../services/file.service';
@@ -271,6 +271,7 @@ export class AdminController {
         .where(
           and(
             or(eq(bookings.status, 'confirmed'), eq(bookings.status, 'completed')),
+            ne(bookings.bookingType, 'free'),
             gte(bookings.bookingDate, defaultFrom),
             lte(bookings.bookingDate, defaultTo)
           )

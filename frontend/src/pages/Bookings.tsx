@@ -203,7 +203,7 @@ export const Bookings: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentClientSecret, setPaymentClientSecret] = useState<string | null>(null);
-  const [paymentAmountPence, setPaymentAmountPence] = useState<number | undefined>(undefined);
+  const [paymentAmountPence, setPaymentAmountPence] = useState<number | null>(null);
   // Form state
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('10:00');
@@ -522,14 +522,14 @@ export const Bookings: React.FC = () => {
     setPaymentModalOpen(open);
     if (!open) {
       setPaymentClientSecret(null);
-      setPaymentAmountPence(undefined);
+      setPaymentAmountPence(null);
     }
   };
 
   const handlePaymentSuccess = () => {
     setPaymentModalOpen(false);
     setPaymentClientSecret(null);
-    setPaymentAmountPence(undefined);
+    setPaymentAmountPence(null);
     setCreateSuccess('Booking created.');
     setCreateError(null);
     const c = new AbortController();
@@ -665,7 +665,7 @@ export const Bookings: React.FC = () => {
               <p className="text-sm text-slate-500">Loading calendar…</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse min-w-[400px] text-sm">
+                <table className="w-full border-collapse min-w-[400px] text-sm" style={{ tableLayout: 'fixed' }}>
                   <thead>
                     <tr>
                       <th className="border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 p-1.5 text-left text-xs font-medium text-slate-600 dark:text-slate-400 w-[60px]">
@@ -675,6 +675,7 @@ export const Bookings: React.FC = () => {
                         <th
                           key={r.id}
                           className="border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 p-1.5 text-center text-xs font-medium text-slate-700 dark:text-slate-300"
+                          style={{ width: `calc((100% - 60px) / ${calendarRooms.length})` }}
                         >
                           {r.name}
                         </th>

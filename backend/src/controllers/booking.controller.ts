@@ -213,13 +213,12 @@ export class BookingController {
         });
         return;
       }
-      const ALLOWED_BOOKING_TYPES = ['permanent_recurring', 'ad_hoc', 'free', 'internal'] as const;
+      const ALLOWED_BOOKING_TYPES = ['permanent_recurring', 'ad_hoc', 'free'] as const;
       const type = req.body.bookingType;
       if (
         type !== 'permanent_recurring' &&
         type !== 'ad_hoc' &&
-        type !== 'free' &&
-        type !== 'internal'
+        type !== 'free'
       ) {
         res.status(400).json({
           success: false,
@@ -228,18 +227,29 @@ export class BookingController {
         });
         return;
       }
-      if ((type === 'free' || type === 'internal') && req.user!.role !== 'admin') {
+      if (type === 'free' && req.user!.role !== 'admin') {
         res.status(403).json({
           success: false,
-          error: 'Only admins can create free or internal bookings',
+          error: 'Only admins can create free bookings',
         });
         return;
       }
+      // For admin creating ad_hoc bookings, require targetUserId to be provided
+      if (type === 'ad_hoc' && req.user!.role === 'admin') {
+        if (!req.body.targetUserId || String(req.body.targetUserId).trim() === '') {
+          res.status(400).json({
+            success: false,
+            error: 'Practitioner selection is required for ad hoc bookings',
+          });
+          return;
+        }
+      }
       const targetUserId =
-        (type === 'free' || type === 'internal') &&
+        (type === 'free' || type === 'ad_hoc') &&
         req.user!.role === 'admin' &&
-        req.body.targetUserId
-          ? req.body.targetUserId
+        req.body.targetUserId &&
+        String(req.body.targetUserId).trim() !== ''
+          ? String(req.body.targetUserId).trim()
           : req.user!.id;
       if (targetUserId !== req.user!.id && req.user!.role !== 'admin') {
         res.status(403).json({ success: false, error: 'Forbidden' });
@@ -249,13 +259,16 @@ export class BookingController {
         res.status(400).json({ success: false, error: 'Invalid targetUserId format' });
         return;
       }
+      const isAdminRequest = req.user!.role === 'admin' && targetUserId !== req.user!.id;
       const result = await BookingService.createBooking(
         targetUserId,
         roomId,
         date,
         startTime,
         endTime,
-        type
+        type,
+        undefined,
+        isAdminRequest
       );
       if ('paymentRequired' in result && result.paymentRequired) {
         res.status(402).json({
@@ -352,13 +365,14 @@ export class BookingController {
   async cancelBooking(req: AuthRequest, res: Response): Promise<void> {
     try {
       const { id } = req.params;
+      const isAdmin = req.user!.role === 'admin';
       const effectiveUserId =
-        req.user!.role === 'admin' ? await BookingService.getBookingOwnerId(id) : req.user!.id;
+        isAdmin ? await BookingService.getBookingOwnerId(id) : req.user!.id;
       if (!effectiveUserId) {
         res.status(404).json({ success: false, error: 'Booking not found' });
         return;
       }
-      await BookingService.cancelBooking(id, effectiveUserId);
+      await BookingService.cancelBooking(id, effectiveUserId, isAdmin);
       res.status(200).json({ success: true, message: 'Booking cancelled' });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to cancel booking';

@@ -187,12 +187,13 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
           const date = paymentIntent.metadata.date;
           const startTime = paymentIntent.metadata.startTime;
           const endTime = paymentIntent.metadata.endTime;
-          const bookingType =
-            (paymentIntent.metadata.bookingType as
-              | 'permanent_recurring'
-              | 'ad_hoc'
-              | 'free'
-              | 'internal') ?? 'ad_hoc';
+          // Validate bookingType to prevent invalid values from reaching createBooking
+          const rawBookingType = paymentIntent.metadata.bookingType;
+          const allowedTypes = ['permanent_recurring', 'ad_hoc', 'free'] as const;
+          const isValidType = rawBookingType && allowedTypes.includes(rawBookingType as typeof allowedTypes[number]);
+          const bookingType: 'permanent_recurring' | 'ad_hoc' | 'free' = isValidType
+            ? (rawBookingType as 'permanent_recurring' | 'ad_hoc' | 'free')
+            : 'ad_hoc';
           const amountReceived = paymentIntent.amount_received;
           if (!date || !startTime || !endTime || amountReceived == null) {
             logger.warn('Pay-the-difference metadata incomplete', {

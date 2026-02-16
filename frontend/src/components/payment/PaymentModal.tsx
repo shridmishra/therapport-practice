@@ -17,7 +17,7 @@ export interface PaymentModalProps {
   /** Stripe PaymentIntent client secret; when set, the form is shown. */
   clientSecret: string | null;
   /** Amount in pence (e.g. 10500 = £105.00) for display. */
-  amountPence?: number;
+  amountPence: number | null;
   onSuccess?: () => void;
   title?: string;
 }
