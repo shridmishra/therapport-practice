@@ -825,17 +825,29 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
     const totalPrice = parseFloat(booking.totalPrice.toString());
     const creditUsed = parseFloat(String(booking.creditUsed ?? 0));
     const voucherHoursUsed = parseFloat(String(booking.voucherHoursUsed ?? 0));
-    const pricePerHour = parseFloat(booking.pricePerHour.toString());
     
-    // Calculate amount covered by vouchers (used to determine Stripe payment, not refunded)
-    const amountCoveredByVouchers = voucherHoursUsed * pricePerHour;
+    // Calculate durationHours from stored times (same as booking creation)
+    const startTimeStr = formatTimeHHMM(booking.startTime as string | Date);
+    const endTimeStr = formatTimeHHMM(booking.endTime as string | Date);
+    const durationHours = timeToHours(endTimeStr) - timeToHours(startTimeStr);
+    
+    // Calculate amount covered by vouchers using the same proportional cents-based calculation as at booking creation
+    // This ensures consistency and avoids 1-cent rounding discrepancies
+    const totalPriceCents = Math.round(totalPrice * 100);
+    const voucherCoveredCents =
+      voucherHoursUsed >= durationHours
+        ? totalPriceCents
+        : Math.round((totalPriceCents * voucherHoursUsed) / durationHours);
+    const amountCoveredByVouchers = voucherCoveredCents / 100;
     
     // Calculate Stripe payment amount: totalPrice - creditUsed - amountCoveredByVouchers
     // This represents the amount paid via "pay the difference" (will be refunded as credits)
-    const stripePaymentAmount = Math.max(0, totalPrice - creditUsed - amountCoveredByVouchers);
+    // Round to 2 decimal places to avoid floating-point drift
+    const stripePaymentAmount = Math.max(0, Math.round((totalPrice - creditUsed - amountCoveredByVouchers) * 100) / 100);
     
     // Total refund = credits used + Stripe payment made
-    const totalRefund = creditUsed + stripePaymentAmount;
+    // Round to 2 decimal places to avoid floating-point drift
+    const totalRefund = Math.round((creditUsed + stripePaymentAmount) * 100) / 100;
     
     await tx
       .update(bookings)
@@ -847,7 +859,9 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
       })
       .where(eq(bookings.id, bookingId));
 
-    if (totalRefund > 0) {
+    // Only grant credits if rounded refund is at least £0.01 (1 penny)
+    // This prevents tiny floating-point values from passing the check but becoming 0.00 after toFixed(2)
+    if (totalRefund >= 0.01) {
       const bookingDate = String(booking.bookingDate);
       if (!/^\d{4}-\d{2}(-\d{2})?$/.test(bookingDate)) {
         throw new BookingValidationError(
