@@ -827,16 +827,16 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
     const voucherHoursUsed = parseFloat(String(booking.voucherHoursUsed ?? 0));
     
     // Calculate durationHours from stored times (same as booking creation)
-    const startTimeStr = formatTimeHHMM(booking.startTime as string | Date);
-    const endTimeStr = formatTimeHHMM(booking.endTime as string | Date);
-    const durationHours = timeToHours(endTimeStr) - timeToHours(startTimeStr);
+    const bookingStartTimeStr = formatTimeHHMM(booking.startTime as string | Date);
+    const bookingEndTimeStr = formatTimeHHMM(booking.endTime as string | Date);
+    const durationHours = timeToHours(bookingEndTimeStr) - timeToHours(bookingStartTimeStr);
     
     // Guard against invalid duration (should not happen for valid bookings, but defensive programming)
     if (durationHours <= 0) {
-      logger.warn('Invalid durationHours in cancellation, using safe fallback', {
+      logger.error('Invalid durationHours in cancellation - indicates potential data corruption, applying safe fallback (treating full price as voucher-covered)', {
         bookingId,
-        startTime: startTimeStr,
-        endTime: endTimeStr,
+        startTime: bookingStartTimeStr,
+        endTime: bookingEndTimeStr,
         durationHours,
       });
     }
