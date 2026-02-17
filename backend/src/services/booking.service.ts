@@ -966,8 +966,10 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
       .where(eq(bookings.id, bookingId));
 
     // Only grant credits if rounded refund is at least £0.01 (1 penny)
+    // AND the booking is not a free booking (free bookings never had payment, so no refund)
     // This prevents tiny floating-point values from passing the check but becoming 0.00 after toFixed(2)
-    if (totalRefund >= 0.01) {
+    // and prevents free bookings from generating unearned credits
+    if (booking.bookingType !== 'free' && totalRefund >= 0.01) {
       const bookingDate = String(booking.bookingDate);
       if (!/^\d{4}-\d{2}(-\d{2})?$/.test(bookingDate)) {
         throw new BookingValidationError(
