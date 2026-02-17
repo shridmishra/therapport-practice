@@ -416,12 +416,17 @@ export async function getCreditBalanceTotals(
   options?: { forBookingMonth?: string }
 ): Promise<{ totalAvailable: number; totalGranted: number; totalUsed: number }> {
   const dateStr = todayUtcString();
-  const expiryFilter = options?.forBookingMonth
-    ? (() => {
-        const { firstDay, lastDay } = getMonthRange(options.forBookingMonth);
-        return sql`${creditTransactions.expiryDate} >= ${dateStr} AND ${creditTransactions.expiryDate} >= ${firstDay} AND ${creditTransactions.expiryDate} <= ${lastDay} AND ${creditTransactions.remainingAmount} > 0 AND ${creditTransactions.revoked} = false`;
-      })()
-    : sql`${creditTransactions.expiryDate} >= ${dateStr} AND ${creditTransactions.remainingAmount} > 0 AND ${creditTransactions.revoked} = false`;
+  // Base filter: credits must not be expired, have remaining amount, and not be revoked
+  const baseExpiryFilter = sql`${creditTransactions.expiryDate} >= ${dateStr} AND ${creditTransactions.remainingAmount} > 0 AND ${creditTransactions.revoked} = false`;
+  
+  // When forBookingMonth is provided, restrict to credits expiring in that month
+  let expiryFilter = baseExpiryFilter;
+  if (options?.forBookingMonth) {
+    const { firstDay, lastDay } = getMonthRange(options.forBookingMonth);
+    // Add month restriction: expiryDate must be within the booking month
+    // Both conditions (>= dateStr and >= firstDay) ensure credits are not expired AND within the month
+    expiryFilter = sql`${baseExpiryFilter} AND ${creditTransactions.expiryDate} >= ${firstDay} AND ${creditTransactions.expiryDate} <= ${lastDay}`;
+  }
 
   const [row] = await db
     .select({
