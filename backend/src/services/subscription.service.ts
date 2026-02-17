@@ -73,6 +73,9 @@ function getMonthlyPriceId(): string {
 
 /**
  * Get last day of a given month in UTC as YYYY-MM-DD.
+ *
+ * Note: `month` is a zero-based month index (0 = January, 11 = December),
+ * matching JavaScript's `Date` APIs (e.g. `getUTCMonth()`).
  */
 function getLastDayOfMonthString(year: number, month: number): string {
   const lastDay = new Date(Date.UTC(year, month + 1, 0));
@@ -180,8 +183,9 @@ export async function checkSubscriptionStatus(userId: string): Promise<Subscript
         : null;
     const suspDate =
       membership.suspensionDate != null ? String(membership.suspensionDate).slice(0, 10) : null;
-    // Ad-hoc must have an active paid period to book (Week 3: subscriptionEndDate >= today)
-    if (membership.subscriptionType == null || endDate == null || endDate <= today) {
+    // Ad-hoc must have an active paid period to book (subscriptionEndDate > today)
+    // Use < instead of <= to allow booking on the expiry date itself (last day of subscription period)
+    if (membership.subscriptionType == null || endDate == null || endDate < today) {
       return {
         canBook: false,
         reason: 'Purchase an ad-hoc subscription to make bookings',
@@ -467,8 +471,9 @@ export async function processAdHocPaymentSuccess(
   }
   const y = d.getUTCFullYear();
   const m = d.getUTCMonth();
-  const subscriptionEndDate = getLastDayOfMonthString(y, m + 1);
-  const expiryDate = subscriptionEndDate;
+  // Grant credits expiring at end of current month (purchase month), not next month
+  // This matches the requirement: buy on Feb 17 → credits expire Feb 28/29 → usable only for February bookings
+  const subscriptionEndDate = getLastDayOfMonthString(y, m);
 
   const [membership] = await db
     .select()
@@ -482,7 +487,7 @@ export async function processAdHocPaymentSuccess(
   await CreditTransactionService.grantCredits(
     userId,
     AD_HOC_AMOUNT_GBP,
-    expiryDate,
+    subscriptionEndDate,
     'ad_hoc_subscription',
     undefined,
     'Ad-hoc one-month subscription'
