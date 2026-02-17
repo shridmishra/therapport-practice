@@ -73,6 +73,9 @@ function getMonthlyPriceId(): string {
 
 /**
  * Get last day of a given month in UTC as YYYY-MM-DD.
+ *
+ * Note: `month` is a zero-based month index (0 = January, 11 = December),
+ * matching JavaScript's `Date` APIs (e.g. `getUTCMonth()`).
  */
 function getLastDayOfMonthString(year: number, month: number): string {
   const lastDay = new Date(Date.UTC(year, month + 1, 0));

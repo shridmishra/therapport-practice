@@ -413,7 +413,13 @@ export async function getCreditSummary(userId: string): Promise<CreditSummaryRes
  */
 export async function getCreditBalanceTotals(
   userId: string,
-  options?: { forBookingMonth?: string }
+  options?: {
+    /**
+     * Booking date in UTC `YYYY-MM-DD`.
+     * If provided, `totalAvailable` only counts credits expiring within that booking month.
+     */
+    forBookingMonth?: string;
+  }
 ): Promise<{ totalAvailable: number; totalGranted: number; totalUsed: number }> {
   const dateStr = todayUtcString();
   // Base filter: credits must not be expired, have remaining amount, and not be revoked
