@@ -474,7 +474,6 @@ export async function processAdHocPaymentSuccess(
   // Grant credits expiring at end of current month (purchase month), not next month
   // This matches the requirement: buy on Feb 17 → credits expire Feb 28/29 → usable only for February bookings
   const subscriptionEndDate = getLastDayOfMonthString(y, m);
-  const expiryDate = subscriptionEndDate;
 
   const [membership] = await db
     .select()
@@ -488,7 +487,7 @@ export async function processAdHocPaymentSuccess(
   await CreditTransactionService.grantCredits(
     userId,
     AD_HOC_AMOUNT_GBP,
-    expiryDate,
+    subscriptionEndDate,
     'ad_hoc_subscription',
     undefined,
     'Ad-hoc one-month subscription'
