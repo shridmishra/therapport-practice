@@ -914,10 +914,46 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
       }
     }
 
-    const refundAmount =
-      booking.creditUsed === null
-        ? parseFloat(booking.totalPrice.toString())
-        : parseFloat(String(booking.creditUsed ?? 0));
+    // Calculate refund amounts: credits used + Stripe payment made
+    const totalPrice = parseFloat(booking.totalPrice.toString());
+    const creditUsed = parseFloat(String(booking.creditUsed ?? 0));
+    const voucherHoursUsed = parseFloat(String(booking.voucherHoursUsed ?? 0));
+    
+    // Calculate durationHours from stored times (same as booking creation)
+    const bookingStartTimeStr = formatTimeHHMM(booking.startTime as string | Date);
+    const bookingEndTimeStr = formatTimeHHMM(booking.endTime as string | Date);
+    const durationHours = timeToHours(bookingEndTimeStr) - timeToHours(bookingStartTimeStr);
+    
+    // Guard against invalid duration (should not happen for valid bookings, but defensive programming)
+    if (durationHours <= 0) {
+      logger.error('Invalid durationHours in cancellation - indicates potential data corruption, applying safe fallback (treating full price as voucher-covered)', {
+        bookingId,
+        startTime: bookingStartTimeStr,
+        endTime: bookingEndTimeStr,
+        durationHours,
+      });
+    }
+    
+    // Calculate amount covered by vouchers using the same proportional cents-based calculation as at booking creation
+    // This ensures consistency and avoids 1-cent rounding discrepancies
+    // Use the exact same formula as creation: compute creditAmountCents first, then derive voucherCoveredCents
+    const totalPriceCents = Math.round(totalPrice * 100);
+    const creditAmountCents =
+      durationHours <= 0 || voucherHoursUsed >= durationHours
+        ? 0
+        : Math.round((totalPriceCents * (durationHours - voucherHoursUsed)) / durationHours);
+    const voucherCoveredCents = totalPriceCents - creditAmountCents;
+    const amountCoveredByVouchers = voucherCoveredCents / 100;
+    
+    // Calculate Stripe payment amount: totalPrice - creditUsed - amountCoveredByVouchers
+    // This represents the amount paid via "pay the difference" (will be refunded as credits)
+    // Round to 2 decimal places to avoid floating-point drift
+    const stripePaymentAmount = Math.max(0, Math.round((totalPrice - creditUsed - amountCoveredByVouchers) * 100) / 100);
+    
+    // Total refund = credits used + Stripe payment made
+    // Round to 2 decimal places to avoid floating-point drift
+    const totalRefund = Math.round((creditUsed + stripePaymentAmount) * 100) / 100;
+    
     const cancellationReason = isAdmin ? 'Cancelled by admin' : 'Cancelled by user';
     await tx
       .update(bookings)
@@ -929,7 +965,11 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
       })
       .where(eq(bookings.id, bookingId));
 
-    if (refundAmount > 0) {
+    // Only grant credits if rounded refund is at least £0.01 (1 penny)
+    // AND the booking is not a free booking (free bookings never had payment, so no refund)
+    // This prevents tiny floating-point values from passing the check but becoming 0.00 after toFixed(2)
+    // and prevents free bookings from generating unearned credits
+    if (booking.bookingType !== 'free' && totalRefund >= 0.01) {
       const bookingDate = String(booking.bookingDate);
       if (!/^\d{4}-\d{2}(-\d{2})?$/.test(bookingDate)) {
         throw new BookingValidationError(
@@ -950,14 +990,16 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
       logger.info('Manual end-of-month grant created for booking cancellation', {
         bookingId,
         bookingDate: booking.bookingDate,
-        refundAmount,
+        refundAmount: totalRefund,
+        creditRefund: creditUsed,
+        stripePaymentRefund: stripePaymentAmount,
         expiryDate,
         grantType: 'manual',
       });
       await CreditTransactionService.grantCreditsWithinTransaction(
         tx,
         userId,
-        refundAmount,
+        totalRefund,
         expiryDate,
         'manual',
         undefined,
@@ -973,7 +1015,7 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
       bookingDate: String(booking.bookingDate),
       startTime: formatTimeForEmail(booking.startTime as string | Date),
       endTime: formatTimeForEmail(booking.endTime as string | Date),
-      refundAmount: refundAmount.toFixed(2),
+      refundAmount: totalRefund.toFixed(2),
     };
   });
 

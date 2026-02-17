@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { AccessDenied } from '@/components/AccessDenied';
@@ -109,6 +109,17 @@ export const AdminCalendar: React.FC = () => {
     'ad_hoc' | 'permanent_recurring' | 'free'
   >('ad_hoc');
   const [targetUserId, setTargetUserId] = useState<string>('');
+
+  // Auto-adjust end time when start time is changed to >= end time
+  useEffect(() => {
+    if (endTime <= startTime) {
+      const nextAfterStart = TIME_OPTIONS_30MIN.find((o) => o.value > startTime);
+      const desiredEnd = nextAfterStart?.value;
+      if (desiredEnd && desiredEnd > startTime && desiredEnd !== endTime) {
+        setEndTime(desiredEnd);
+      }
+    }
+  }, [startTime, endTime]);
 
   const { rooms, selectedRoomId, setSelectedRoomId, loadingRooms } = useRooms(location);
   const { calendarRooms, calendarBookings, loadingCalendar, fetchCalendar } = useCalendar(
