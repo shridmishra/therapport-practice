@@ -147,13 +147,15 @@ export const PractitionerManagement: React.FC = () => {
     }
   }, [searchQuery, page, limit, sortBy, sortOrder, setMessageWithTimeout]);
 
-  // Reset page when search query or sorting changes
+  // Reset page when search query changes
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, sortBy, sortOrder]);
+  }, [searchQuery]);
 
   // Handle column header click for sorting
   const handleSort = (column: 'name' | 'membership' | 'status') => {
+    // Reset page when sorting changes to prevent double-fetch
+    setPage(1);
     if (sortBy === column) {
       // Toggle sort order if clicking the same column
       setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));

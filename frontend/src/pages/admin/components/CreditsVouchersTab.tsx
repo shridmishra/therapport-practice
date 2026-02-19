@@ -64,6 +64,17 @@ export const CreditsVouchersTab: React.FC<CreditsVouchersTabProps> = ({
               <div className="space-y-2">
                 {credit.byMonth.map((monthCredit) => {
                   // Format month from YYYY-MM to "MMM YYYY" (e.g., "2026-02" -> "Feb 2026")
+                  // Validate month format before parsing to prevent Invalid Date
+                  const monthFormatRegex = /^\d{4}-\d{2}$/;
+                  if (!monthFormatRegex.test(monthCredit.month)) {
+                    // Fallback to raw string if format is invalid
+                    return (
+                      <div key={monthCredit.month} className="flex items-center gap-3 py-1">
+                        <span className="text-sm font-medium">{monthCredit.month}</span>
+                        <span className="text-lg font-bold">£{monthCredit.remainingCredit.toFixed(2)}</span>
+                      </div>
+                    );
+                  }
                   const [year, month] = monthCredit.month.split('-');
                   const date = new Date(parseInt(year), parseInt(month) - 1, 1);
                   const monthName = date.toLocaleDateString('en-GB', {
