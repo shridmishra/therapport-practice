@@ -350,7 +350,16 @@ export const practitionerApi = {
   },
 
   getCredits: (signal?: AbortSignal) => {
-    return api.get<{ success: boolean; credit: CreditSummary }>('/practitioner/credits', {
+    return api.get<{ 
+      success: boolean; 
+      credit: CreditSummary;
+      freeBookingHours?: {
+        remaining: number;
+        totalAllocated: number;
+        totalUsed: number;
+        earliestExpiry: string | null;
+      };
+    }>('/practitioner/credits', {
       signal,
     });
   },

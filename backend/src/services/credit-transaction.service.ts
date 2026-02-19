@@ -248,6 +248,40 @@ export async function getAvailableCredits(
   }));
 }
 
+/**
+ * Get all non-expired credit transactions for a user, including those with 0 remaining balance.
+ * Used for display purposes to show all months that have had credits allocated, even if balance is 0.
+ * Sorted by expiryDate ascending.
+ */
+export async function getAllNonExpiredCredits(
+  userId: string,
+  asOfDate?: string
+): Promise<CreditTransactionRow[]> {
+  const dateStr = asOfDate ?? todayUtcString();
+  const rows = await db
+    .select()
+    .from(creditTransactions)
+    .where(
+      and(
+        eq(creditTransactions.userId, userId),
+        eq(creditTransactions.revoked, false),
+        gte(creditTransactions.expiryDate, dateStr)
+      )
+    )
+    .orderBy(asc(creditTransactions.expiryDate), asc(creditTransactions.grantDate));
+  return rows.map((r) => ({
+    id: r.id,
+    amount: parseFloat(r.amount.toString()),
+    usedAmount: parseFloat(r.usedAmount.toString()),
+    remainingAmount: parseFloat(r.remainingAmount.toString()),
+    grantDate: r.grantDate,
+    expiryDate: r.expiryDate,
+    sourceType: r.sourceType as CreditSourceType,
+    description: r.description,
+    revoked: !!r.revoked,
+  }));
+}
+
 /** Transaction client type for useCreditsWithinTransaction (same as db.transaction callback param). */
 export type CreditTransactionClient = Parameters<Parameters<typeof db.transaction>[0]>[0];
 

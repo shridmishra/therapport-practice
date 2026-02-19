@@ -49,18 +49,22 @@ export class CreditService {
       const nextMonthDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
       const nextMonthStr = formatMonthYear(nextMonthDate);
 
-      const [totals, summaryByExpiry] = await Promise.all([
+      const [totals, summaryByExpiry, allNonExpiredTransactions] = await Promise.all([
         CreditTransactionService.getCreditBalanceTotals(userId),
         CreditTransactionService.getCreditSummary(userId),
+        CreditTransactionService.getAllNonExpiredCredits(userId),
       ]);
 
       // Group remaining non-expired credits by expiry month (YYYY-MM, based on expiryDate in UTC).
+      // Include months with 0 balance to show them in the UI (e.g., "February £0", "March £0").
       const byMonthMap = new Map<string, number>();
-      for (const entry of summaryByExpiry.byExpiry) {
-        if (!entry.expiryDate) continue;
-        const monthKey = entry.expiryDate.slice(0, 7); // YYYY-MM
+      
+      // First, add all months from transactions (including those with 0 balance)
+      for (const transaction of allNonExpiredTransactions) {
+        if (!transaction.expiryDate) continue;
+        const monthKey = transaction.expiryDate.slice(0, 7); // YYYY-MM
         const existing = byMonthMap.get(monthKey) ?? 0;
-        byMonthMap.set(monthKey, existing + entry.remainingAmount);
+        byMonthMap.set(monthKey, existing + transaction.remainingAmount);
       }
 
       const byMonth: CreditSummaryByMonth[] = Array.from(byMonthMap.entries())
