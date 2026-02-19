@@ -644,7 +644,7 @@ export const Bookings: React.FC = () => {
           </Card>
 
           {/* Free Booking Hours */}
-          <Card className="relative overflow-hidden group h-40">
+          <Card className="relative overflow-hidden group min-h-40">
             <div className="absolute right-0 top-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity">
               <Icon name="timer" className="text-6xl text-orange-500" />
             </div>
@@ -656,18 +656,17 @@ export const Bookings: React.FC = () => {
                 <>
                   <div className="flex items-baseline gap-1">
                     <span className="text-slate-900 dark:text-white text-4xl font-black tracking-tight">
-                      {freeHours?.remaining.toFixed(1) || '0.0'}
+                      {freeHours?.remaining.toFixed(1) ?? '0.0'}
                     </span>
                     <span className="text-slate-500 font-bold">Hours</span>
                   </div>
                   {freeHours?.earliestExpiry ? (
                     <p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
                       Expires: {(() => {
-                        if (!freeHours.earliestExpiry) return '';
                         try {
-                          const date = new Date(freeHours.earliestExpiry);
-                          if (isNaN(date.getTime())) return '';
-                          return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+                          const expiryDate = new Date(freeHours.earliestExpiry);
+                          if (isNaN(expiryDate.getTime())) return '';
+                          return expiryDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
                         } catch {
                           return '';
                         }
