@@ -21,6 +21,7 @@ import {
   type RoomItem,
   type CreditSummary,
   type CreateBookingPaymentRequiredError,
+  type FreeBookingHours,
 } from '@/services/api';
 import { toZonedTime } from 'date-fns-tz';
 import { canCancelBooking } from '@/lib/booking-utils';
@@ -185,12 +186,7 @@ export const Bookings: React.FC = () => {
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [bookings, setBookings] = useState<BookingItem[]>([]);
   const [credit, setCredit] = useState<CreditSummary | null>(null);
-  const [freeHours, setFreeHours] = useState<{
-    remaining: number;
-    totalAllocated: number;
-    totalUsed: number;
-    earliestExpiry: string | null;
-  } | null>(null);
+  const [freeHours, setFreeHours] = useState<FreeBookingHours | null>(null);
   const [calendarRooms, setCalendarRooms] = useState<Array<{ id: string; name: string }>>([]);
   const [calendarBookings, setCalendarBookings] = useState<
     Array<{ roomId: string; startTime: string; endTime: string; bookerName?: string; userId?: string }>
@@ -660,23 +656,37 @@ export const Bookings: React.FC = () => {
                     </span>
                     <span className="text-slate-500 font-bold">Hours</span>
                   </div>
-                  {freeHours?.earliestExpiry ? (
-                    <p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
-                      Expires: {(() => {
-                        try {
-                          const expiryDate = new Date(freeHours.earliestExpiry);
-                          if (isNaN(expiryDate.getTime())) return '';
-                          return expiryDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-                        } catch {
-                          return '';
-                        }
-                      })()}
-                    </p>
-                  ) : (
-                    <p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
-                      No active vouchers
-                    </p>
-                  )}
+                  {(() => {
+                    if (!freeHours?.earliestExpiry) {
+                      return (
+                        <p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
+                          No active vouchers
+                        </p>
+                      );
+                    }
+                    try {
+                      const expiryDate = new Date(freeHours.earliestExpiry);
+                      if (isNaN(expiryDate.getTime())) {
+                        return (
+                          <p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
+                            No active vouchers
+                          </p>
+                        );
+                      }
+                      const formattedDate = expiryDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+                      return (
+                        <p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
+                          Expires: {formattedDate}
+                        </p>
+                      );
+                    } catch {
+                      return (
+                        <p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
+                          No active vouchers
+                        </p>
+                      );
+                    }
+                  })()}
                 </>
               )}
             </CardContent>
