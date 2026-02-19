@@ -16,7 +16,7 @@ import {
   emailChangeRequests,
   rooms,
 } from '../db/schema';
-import { eq, and, or, not, ilike, aliasedTable, isNull, sql, SQL, count, gte, lte, lt, desc, ne } from 'drizzle-orm';
+import { eq, and, or, not, ilike, aliasedTable, isNull, sql, SQL, count, gte, lte, lt, desc, asc, ne } from 'drizzle-orm';
 import { logger } from '../utils/logger.util';
 import { z, ZodError } from 'zod';
 import { FileService } from '../services/file.service';
@@ -88,6 +88,14 @@ export class AdminController {
       const limit = Math.min(Math.max(1, limitRaw), maxLimit);
       const offset = (page - 1) * limit;
 
+      // Parse and validate sorting parameters
+      const sortBy = req.query.sortBy as string | undefined;
+      const sortOrder = (req.query.sortOrder as string) || 'asc';
+      const validSortBy = ['name', 'membership', 'status'];
+      const validSortOrder = ['asc', 'desc'];
+      const isValidSortBy = sortBy && validSortBy.includes(sortBy);
+      const isValidSortOrder = validSortOrder.includes(sortOrder);
+
       // Build where conditions
       const whereConditions: SQL<unknown>[] = [eq(users.role, 'practitioner')];
 
@@ -116,8 +124,8 @@ export class AdminController {
       const totalCount = countResult?.count || 0;
       const totalPages = Math.ceil(totalCount / limit);
 
-      // Build query with pagination
-      const practitioners = await db
+      // Build base query
+      const baseQuery = db
         .select({
           id: users.id,
           email: users.email,
@@ -130,12 +138,117 @@ export class AdminController {
         })
         .from(users)
         .leftJoin(memberships, eq(users.id, memberships.userId))
-        .where(and(...whereConditions))
-        .limit(limit)
-        .offset(offset);
+        .where(and(...whereConditions));
+
+      // Apply sorting if valid parameters provided
+      let practitioners;
+      if (isValidSortBy && isValidSortOrder) {
+        if (sortBy === 'name') {
+          // Sort by firstName first, then lastName (case-insensitive to match display order)
+          if (sortOrder === 'desc') {
+            practitioners = await (baseQuery as any)
+              .orderBy(
+                sql`LOWER(${users.firstName}) DESC`,
+                sql`LOWER(${users.lastName}) DESC`
+              )
+              .limit(limit)
+              .offset(offset);
+          } else {
+            practitioners = await (baseQuery as any)
+              .orderBy(
+                sql`LOWER(${users.firstName}) ASC`,
+                sql`LOWER(${users.lastName}) ASC`
+              )
+              .limit(limit)
+              .offset(offset);
+          }
+        } else if (sortBy === 'membership') {
+          // Sort by membership type, with NULL values last
+          if (sortOrder === 'desc') {
+            practitioners = await (baseQuery as any)
+              .orderBy(
+                sql`${memberships.type} DESC NULLS LAST`,
+                asc(users.lastName),
+                asc(users.firstName)
+              )
+              .limit(limit)
+              .offset(offset);
+          } else {
+            practitioners = await (baseQuery as any)
+              .orderBy(
+                sql`${memberships.type} ASC NULLS LAST`,
+                asc(users.lastName),
+                asc(users.firstName)
+              )
+              .limit(limit)
+              .offset(offset);
+          }
+        } else if (sortBy === 'status') {
+          // Sort by status with custom order: active, pending, suspended, rejected
+          if (sortOrder === 'desc') {
+            practitioners = await (baseQuery as any)
+              .orderBy(
+                sql`CASE 
+                  WHEN ${users.status} = 'active' THEN 1
+                  WHEN ${users.status} = 'pending' THEN 2
+                  WHEN ${users.status} = 'suspended' THEN 3
+                  WHEN ${users.status} = 'rejected' THEN 4
+                  ELSE 5
+                END DESC`,
+                asc(users.lastName),
+                asc(users.firstName)
+              )
+              .limit(limit)
+              .offset(offset);
+          } else {
+            practitioners = await (baseQuery as any)
+              .orderBy(
+                sql`CASE 
+                  WHEN ${users.status} = 'active' THEN 1
+                  WHEN ${users.status} = 'pending' THEN 2
+                  WHEN ${users.status} = 'suspended' THEN 3
+                  WHEN ${users.status} = 'rejected' THEN 4
+                  ELSE 5
+                END ASC`,
+                asc(users.lastName),
+                asc(users.firstName)
+              )
+              .limit(limit)
+              .offset(offset);
+          }
+        } else {
+          // Fallback to default ordering by name (firstName, then lastName) ascending
+          practitioners = await (baseQuery as any)
+            .orderBy(
+              sql`LOWER(${users.firstName}) ASC`,
+              sql`LOWER(${users.lastName}) ASC`
+            )
+            .limit(limit)
+            .offset(offset);
+        }
+      } else {
+        // Default ordering by name (firstName, then lastName) ascending
+        practitioners = await (baseQuery as any)
+          .orderBy(
+            sql`LOWER(${users.firstName}) ASC`,
+            sql`LOWER(${users.lastName}) ASC`
+          )
+          .limit(limit)
+          .offset(offset);
+      }
 
       // Format response
-      const formattedPractitioners = practitioners.map((p) => ({
+      type PractitionerRow = {
+        id: string;
+        email: string;
+        firstName: string;
+        lastName: string;
+        role: string;
+        status: 'pending' | 'active' | 'suspended' | 'rejected';
+        membershipType: 'permanent' | 'ad_hoc' | null;
+        marketingAddon: boolean | null;
+      };
+      const formattedPractitioners = practitioners.map((p: PractitionerRow) => ({
         id: p.id,
         email: p.email,
         firstName: p.firstName,

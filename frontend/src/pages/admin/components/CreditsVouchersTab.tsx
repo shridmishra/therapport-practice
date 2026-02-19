@@ -56,14 +56,32 @@ export const CreditsVouchersTab: React.FC<CreditsVouchersTabProps> = ({
         <>
           <div>
             <h4 className="text-sm font-medium mb-2">Remaining credit</h4>
-            {credit?.membershipType === 'ad_hoc' && credit?.currentMonth ? (
-              <div className="text-2xl font-bold">
-                £{credit.currentMonth.remainingCredit.toFixed(2)}
-              </div>
-            ) : credit?.membershipType === 'permanent' ? (
+            {credit?.membershipType === 'permanent' ? (
               <p className="text-slate-500 text-sm">
                 Permanent members are billed outside the app.
               </p>
+            ) : credit?.byMonth && credit.byMonth.length > 0 ? (
+              <div className="space-y-2">
+                {credit.byMonth.map((monthCredit) => {
+                  // Format month from YYYY-MM to "MMM YYYY" (e.g., "2026-02" -> "Feb 2026")
+                  const [year, month] = monthCredit.month.split('-');
+                  const date = new Date(parseInt(year), parseInt(month) - 1, 1);
+                  const monthName = date.toLocaleDateString('en-GB', {
+                    month: 'short',
+                    year: 'numeric',
+                  });
+                  return (
+                    <div key={monthCredit.month} className="flex items-center gap-3 py-1">
+                      <span className="text-sm font-medium">{monthName}</span>
+                      <span className="text-lg font-bold">£{monthCredit.remainingCredit.toFixed(2)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : credit?.currentMonth ? (
+              <div className="text-2xl font-bold">
+                £{credit.currentMonth.remainingCredit.toFixed(2)}
+              </div>
             ) : (
               <p className="text-slate-500 text-sm">No membership or ad-hoc credit.</p>
             )}

@@ -69,6 +69,8 @@ export const PractitionerManagement: React.FC = () => {
   const limit = 10;
   const [selectedPractitioner, setSelectedPractitioner] = useState<FullPractitioner | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<'name' | 'membership' | 'status' | null>(null);
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -121,7 +123,13 @@ export const PractitionerManagement: React.FC = () => {
   const fetchPractitioners = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await adminApi.getPractitioners(searchQuery, page, limit);
+      const response = await adminApi.getPractitioners(
+        searchQuery,
+        page,
+        limit,
+        sortBy || undefined,
+        sortOrder
+      );
       if (response.data?.success) {
         setPractitioners(response.data.data || []);
         // Access pagination from the intersection type properties
@@ -137,12 +145,24 @@ export const PractitionerManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, page, limit, setMessageWithTimeout]);
+  }, [searchQuery, page, limit, sortBy, sortOrder, setMessageWithTimeout]);
 
-  // Reset page when search query changes
+  // Reset page when search query or sorting changes
   useEffect(() => {
     setPage(1);
-  }, [searchQuery]);
+  }, [searchQuery, sortBy, sortOrder]);
+
+  // Handle column header click for sorting
+  const handleSort = (column: 'name' | 'membership' | 'status') => {
+    if (sortBy === column) {
+      // Toggle sort order if clicking the same column
+      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      // Set new column and default to ascending
+      setSortBy(column);
+      setSortOrder('asc');
+    }
+  };
 
   // Clamp page if totalPages reduces (e.g. after search/filter)
   useEffect(() => {
@@ -478,10 +498,52 @@ export const PractitionerManagement: React.FC = () => {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="min-w-[120px]">Name</TableHead>
+                        <TableHead
+                          className="min-w-[120px] cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800"
+                          onClick={() => handleSort('name')}
+                        >
+                          <div className="flex items-center gap-2">
+                            Name
+                            {sortBy === 'name' && (
+                              <Icon
+                                name={sortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'}
+                                size={16}
+                                className="text-slate-600 dark:text-slate-400"
+                              />
+                            )}
+                          </div>
+                        </TableHead>
                         <TableHead className="min-w-[150px]">Email</TableHead>
-                        <TableHead className="min-w-[100px]">Membership</TableHead>
-                        <TableHead className="min-w-[70px]">Status</TableHead>
+                        <TableHead
+                          className="min-w-[100px] cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800"
+                          onClick={() => handleSort('membership')}
+                        >
+                          <div className="flex items-center gap-2">
+                            Membership
+                            {sortBy === 'membership' && (
+                              <Icon
+                                name={sortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'}
+                                size={16}
+                                className="text-slate-600 dark:text-slate-400"
+                              />
+                            )}
+                          </div>
+                        </TableHead>
+                        <TableHead
+                          className="min-w-[70px] cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800"
+                          onClick={() => handleSort('status')}
+                        >
+                          <div className="flex items-center gap-2">
+                            Status
+                            {sortBy === 'status' && (
+                              <Icon
+                                name={sortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'}
+                                size={16}
+                                className="text-slate-600 dark:text-slate-400"
+                              />
+                            )}
+                          </div>
+                        </TableHead>
                         <TableHead className="min-w-[70px]">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
