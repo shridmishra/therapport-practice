@@ -503,6 +503,21 @@ export const PractitionerManagement: React.FC = () => {
                         <TableHead
                           className="min-w-[120px] cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800"
                           onClick={() => handleSort('name')}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              handleSort('name');
+                            }
+                          }}
+                          tabIndex={0}
+                          role="button"
+                          aria-sort={
+                            sortBy === 'name'
+                              ? sortOrder === 'asc'
+                                ? 'ascending'
+                                : 'descending'
+                              : 'none'
+                          }
                         >
                           <div className="flex items-center gap-2">
                             Name
@@ -511,6 +526,7 @@ export const PractitionerManagement: React.FC = () => {
                                 name={sortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'}
                                 size={16}
                                 className="text-slate-600 dark:text-slate-400"
+                                aria-hidden="true"
                               />
                             )}
                           </div>
@@ -519,6 +535,21 @@ export const PractitionerManagement: React.FC = () => {
                         <TableHead
                           className="min-w-[100px] cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800"
                           onClick={() => handleSort('membership')}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              handleSort('membership');
+                            }
+                          }}
+                          tabIndex={0}
+                          role="button"
+                          aria-sort={
+                            sortBy === 'membership'
+                              ? sortOrder === 'asc'
+                                ? 'ascending'
+                                : 'descending'
+                              : 'none'
+                          }
                         >
                           <div className="flex items-center gap-2">
                             Membership
@@ -527,6 +558,7 @@ export const PractitionerManagement: React.FC = () => {
                                 name={sortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'}
                                 size={16}
                                 className="text-slate-600 dark:text-slate-400"
+                                aria-hidden="true"
                               />
                             )}
                           </div>
@@ -534,6 +566,21 @@ export const PractitionerManagement: React.FC = () => {
                         <TableHead
                           className="min-w-[70px] cursor-pointer select-none hover:bg-slate-100 dark:hover:bg-slate-800"
                           onClick={() => handleSort('status')}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              handleSort('status');
+                            }
+                          }}
+                          tabIndex={0}
+                          role="button"
+                          aria-sort={
+                            sortBy === 'status'
+                              ? sortOrder === 'asc'
+                                ? 'ascending'
+                                : 'descending'
+                              : 'none'
+                          }
                         >
                           <div className="flex items-center gap-2">
                             Status
@@ -542,6 +589,7 @@ export const PractitionerManagement: React.FC = () => {
                                 name={sortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'}
                                 size={16}
                                 className="text-slate-600 dark:text-slate-400"
+                                aria-hidden="true"
                               />
                             )}
                           </div>

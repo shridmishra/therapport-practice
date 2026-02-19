@@ -1,7 +1,7 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
 
-interface IconProps {
+interface IconProps extends React.HTMLAttributes<HTMLSpanElement> {
   name: string;
   className?: string;
   filled?: boolean;
@@ -12,7 +12,8 @@ export const Icon: React.FC<IconProps> = ({
   name, 
   className = '', 
   filled = false,
-  size = 24 
+  size = 24,
+  ...props
 }) => {
   return (
     <span
@@ -22,6 +23,7 @@ export const Icon: React.FC<IconProps> = ({
         className
       )}
       style={{ fontSize: typeof size === 'number' ? `${size}px` : size }}
+      {...props}
     >
       {name}
     </span>

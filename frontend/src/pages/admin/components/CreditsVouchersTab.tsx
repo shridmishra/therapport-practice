@@ -35,6 +35,14 @@ export const CreditsVouchersTab: React.FC<CreditsVouchersTabProps> = ({
   const [expiryDate, setExpiryDate] = useState('');
   const [reason, setReason] = useState('');
 
+  // Helper function to safely format remaining credit with defensive guards
+  const formatRemainingCredit = (value: unknown): string => {
+    if (typeof value !== 'number' || !isFinite(value)) {
+      return '0.00';
+    }
+    return value.toFixed(2);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const h = parseFloat(hours);
@@ -71,7 +79,7 @@ export const CreditsVouchersTab: React.FC<CreditsVouchersTabProps> = ({
                     return (
                       <div key={monthCredit.month} className="flex items-center gap-3 py-1">
                         <span className="text-sm font-medium">{monthCredit.month}</span>
-                        <span className="text-lg font-bold">£{monthCredit.remainingCredit.toFixed(2)}</span>
+                        <span className="text-lg font-bold">£{formatRemainingCredit(monthCredit.remainingCredit)}</span>
                       </div>
                     );
                   }
@@ -84,14 +92,14 @@ export const CreditsVouchersTab: React.FC<CreditsVouchersTabProps> = ({
                   return (
                     <div key={monthCredit.month} className="flex items-center gap-3 py-1">
                       <span className="text-sm font-medium">{monthName}</span>
-                      <span className="text-lg font-bold">£{monthCredit.remainingCredit.toFixed(2)}</span>
+                      <span className="text-lg font-bold">£{formatRemainingCredit(monthCredit.remainingCredit)}</span>
                     </div>
                   );
                 })}
               </div>
             ) : credit?.currentMonth ? (
               <div className="text-2xl font-bold">
-                £{credit.currentMonth.remainingCredit.toFixed(2)}
+                £{formatRemainingCredit(credit.currentMonth.remainingCredit)}
               </div>
             ) : (
               <p className="text-slate-500 text-sm">No membership or ad-hoc credit.</p>
@@ -125,7 +133,7 @@ export const CreditsVouchersTab: React.FC<CreditsVouchersTabProps> = ({
                   </TableBody>
                 </Table>
                 <div className="px-4 py-2 text-sm text-slate-500 border-t">
-                  Total remaining: {voucher.remainingHours.toFixed(1)}h
+                  Total remaining: {typeof voucher.remainingHours === 'number' && isFinite(voucher.remainingHours) ? voucher.remainingHours.toFixed(1) : '0.0'}h
                   {voucher.earliestExpiry && ` (earliest expiry: ${voucher.earliestExpiry})`}
                 </div>
               </div>
