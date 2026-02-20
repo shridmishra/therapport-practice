@@ -654,7 +654,7 @@ export async function createBooking(
     .select()
     .from(freeBookingVouchers)
     .where(
-      and(eq(freeBookingVouchers.userId, userId), gte(freeBookingVouchers.expiryDate, todayStr))
+      and(eq(freeBookingVouchers.userId, userId), gte(freeBookingVouchers.expiryDate, date))
     )
     .orderBy(asc(freeBookingVouchers.expiryDate));
   const remainingVoucherHours = voucherRows.reduce((sum, v) => {
@@ -759,7 +759,7 @@ export async function createBooking(
       .select()
       .from(freeBookingVouchers)
       .where(
-        and(eq(freeBookingVouchers.userId, userId), gte(freeBookingVouchers.expiryDate, todayStr))
+        and(eq(freeBookingVouchers.userId, userId), gte(freeBookingVouchers.expiryDate, date))
       )
       .orderBy(asc(freeBookingVouchers.expiryDate));
     const remainingVoucherHours = voucherRows.reduce((sum, v) => {
@@ -1219,7 +1219,7 @@ export async function updateBooking(
       .where(
         and(
           eq(freeBookingVouchers.userId, userId),
-          gte(freeBookingVouchers.expiryDate, todayStr)
+          gte(freeBookingVouchers.expiryDate, newDate)
         )
       )
       .orderBy(asc(freeBookingVouchers.expiryDate));

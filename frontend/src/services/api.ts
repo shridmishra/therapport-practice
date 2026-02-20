@@ -209,6 +209,13 @@ export interface VoucherSummary {
   }>;
 }
 
+export interface FreeBookingHours {
+  remaining: number;
+  totalAllocated: number;
+  totalUsed: number;
+  earliestExpiry: string | null;
+}
+
 export interface InvoiceItem {
   id: string;
   number: string | null;
@@ -350,7 +357,11 @@ export const practitionerApi = {
   },
 
   getCredits: (signal?: AbortSignal) => {
-    return api.get<{ success: boolean; credit: CreditSummary }>('/practitioner/credits', {
+    return api.get<{ 
+      success: boolean; 
+      credit: CreditSummary;
+      freeBookingHours?: FreeBookingHours;
+    }>('/practitioner/credits', {
       signal,
     });
   },

@@ -21,6 +21,7 @@ import {
   type RoomItem,
   type CreditSummary,
   type CreateBookingPaymentRequiredError,
+  type FreeBookingHours,
 } from '@/services/api';
 import { toZonedTime } from 'date-fns-tz';
 import { canCancelBooking } from '@/lib/booking-utils';
@@ -185,6 +186,7 @@ export const Bookings: React.FC = () => {
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [bookings, setBookings] = useState<BookingItem[]>([]);
   const [credit, setCredit] = useState<CreditSummary | null>(null);
+  const [freeHours, setFreeHours] = useState<FreeBookingHours | null>(null);
   const [calendarRooms, setCalendarRooms] = useState<Array<{ id: string; name: string }>>([]);
   const [calendarBookings, setCalendarBookings] = useState<
     Array<{ roomId: string; startTime: string; endTime: string; bookerName?: string; userId?: string }>
@@ -292,8 +294,14 @@ export const Bookings: React.FC = () => {
       if (signal?.aborted) return;
       if (res.data.success && res.data.credit) {
         setCredit(res.data.credit);
+        if (res.data.freeBookingHours) {
+          setFreeHours(res.data.freeBookingHours);
+        } else {
+          setFreeHours(null);
+        }
       } else {
         setCredit(null);
+        setFreeHours(null);
       }
     } catch (err) {
       if (
@@ -302,6 +310,7 @@ export const Bookings: React.FC = () => {
       )
         return;
       setCredit(null);
+      setFreeHours(null);
     } finally {
       if (!signal?.aborted) setLoadingCredit(false);
     }
@@ -556,78 +565,133 @@ export const Bookings: React.FC = () => {
           </p>
         </div>
 
-        {/* Credit summary */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Icon name="account_balance_wallet" className="text-primary" />
-              Credit balance
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loadingCredit ? (
-              <p className="text-sm text-slate-500">Loading…</p>
-            ) : credit?.membershipType === 'permanent' ? (
-              <div className="space-y-2">
-                <p className="text-sm text-slate-500">Permanent membership — no credit balance.</p>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs text-primary mt-2"
-                  onClick={() => navigate('/finance')}
-                >
-                  View Transaction History
-                </Button>
-              </div>
-            ) : monthlyCreditBreakdown.length > 0 ? (
-              <div className="space-y-2">
-                <ul className="space-y-1">
-                  {monthlyCreditBreakdown.map(({ month, remainingCredit }) => (
-                    <li key={month} className="flex items-center gap-2">
-                      <span className="text-sm text-slate-600 dark:text-slate-300">
-                        {formatMonthKeyToLabel(month)}
-                      </span>
-                      <span className="text-sm font-bold text-slate-900 dark:text-white tabular-nums">
-                        £{remainingCredit.toFixed(2)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs text-primary mt-2"
-                  onClick={() => navigate('/finance')}
-                >
-                  View Transaction History
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-slate-600 dark:text-slate-300">
-                    {credit?.currentMonth?.monthYear
-                      ? formatMonthKeyToLabel(credit.currentMonth.monthYear.slice(0, 7))
-                      : formatMonthKeyToLabel(new Date().toISOString().slice(0, 7))}
-                  </span>
-                  <span className="text-sm font-bold text-slate-900 dark:text-white tabular-nums">
-                    £{credit?.currentMonth?.remainingCredit != null 
-                      ? credit.currentMonth.remainingCredit.toFixed(2) 
-                      : '0.00'}
-                  </span>
+        {/* Credit and Free Hours Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Credit Balance */}
+          <Card className="relative overflow-hidden group min-h-40">
+            <div className="absolute right-0 top-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity">
+              <Icon name="account_balance_wallet" className="text-6xl text-primary" />
+            </div>
+            <CardContent className="p-6 flex flex-col justify-between h-full relative z-10">
+              <p className="text-slate-500 dark:text-slate-400 font-medium">Credit Balance</p>
+              {loadingCredit ? (
+                <p className="text-sm text-slate-500">Loading…</p>
+              ) : credit?.membershipType === 'permanent' ? (
+                <div className="flex flex-col gap-1">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Permanent membership</p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2 text-xs text-primary self-start"
+                    onClick={() => navigate('/finance')}
+                  >
+                    View Transaction History
+                  </Button>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs text-primary mt-2"
-                  onClick={() => navigate('/finance')}
-                >
-                  View Transaction History
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              ) : monthlyCreditBreakdown.length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  {monthlyCreditBreakdown.map(({ month, remainingCredit }) => {
+                    const monthLabel = formatMonthKeyToLabel(month);
+                    return (
+                      <div key={month} className="flex items-center gap-2">
+                        <span className="text-slate-500 dark:text-slate-400 text-lg">
+                          {monthLabel}
+                        </span>
+                        <span className="text-slate-900 dark:text-white text-lg font-bold">
+                          £{remainingCredit.toFixed(2)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2 text-xs text-primary self-start"
+                    onClick={() => navigate('/finance')}
+                  >
+                    View Transaction History
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-500 dark:text-slate-400 text-lg">
+                      {credit?.currentMonth?.monthYear
+                        ? formatMonthKeyToLabel(credit.currentMonth.monthYear.slice(0, 7))
+                        : formatMonthKeyToLabel(new Date().toISOString().slice(0, 7))}
+                    </span>
+                    <span className="text-slate-900 dark:text-white text-lg font-bold">
+                      £{credit?.currentMonth?.remainingCredit != null 
+                        ? credit.currentMonth.remainingCredit.toFixed(2) 
+                        : '0.00'}
+                    </span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2 text-xs text-primary self-start"
+                    onClick={() => navigate('/finance')}
+                  >
+                    View Transaction History
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Free Booking Hours */}
+          <Card className="relative overflow-hidden group min-h-40">
+            <div className="absolute right-0 top-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity">
+              <Icon name="timer" className="text-6xl text-orange-500" />
+            </div>
+            <CardContent className="p-6 flex flex-col justify-between h-full relative z-10">
+              <p className="text-slate-500 dark:text-slate-400 font-medium">Free Booking Hours</p>
+              {loadingCredit ? (
+                <p className="text-sm text-slate-500">Loading…</p>
+              ) : (
+                <>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-slate-900 dark:text-white text-4xl font-black tracking-tight">
+                      {freeHours?.remaining.toFixed(1) ?? '0.0'}
+                    </span>
+                    <span className="text-slate-500 font-bold">Hours</span>
+                  </div>
+                  {(() => {
+                    if (!freeHours?.earliestExpiry) {
+                      return (
+                        <p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
+                          No active vouchers
+                        </p>
+                      );
+                    }
+                    try {
+                      const expiryDate = new Date(freeHours.earliestExpiry);
+                      if (isNaN(expiryDate.getTime())) {
+                        return (
+                          <p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
+                            No active vouchers
+                          </p>
+                        );
+                      }
+                      const formattedDate = expiryDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+                      return (
+                        <p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
+                          Expires: {formattedDate}
+                        </p>
+                      );
+                    } catch {
+                      return (
+                        <p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
+                          No active vouchers
+                        </p>
+                      );
+                    }
+                  })()}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Calendar: location, date, day grid with rooms as columns */}
         <Card>

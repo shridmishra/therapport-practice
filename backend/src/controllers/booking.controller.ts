@@ -2,6 +2,7 @@ import { Response } from 'express';
 import type { AuthRequest } from '../middleware/auth.middleware';
 import * as BookingService from '../services/booking.service';
 import { CreditService } from '../services/credit.service';
+import { VoucherService } from '../services/voucher.service';
 import { logger } from '../utils/logger.util';
 import { BookingServiceError } from '../errors/booking.errors';
 
@@ -390,8 +391,20 @@ export class BookingController {
 
   async getCredits(req: AuthRequest, res: Response): Promise<void> {
     try {
-      const balance = await CreditService.getCreditBalance(req.user!.id);
-      res.status(200).json({ success: true, credit: balance });
+      const [balance, freeHours] = await Promise.all([
+        CreditService.getCreditBalance(req.user!.id),
+        VoucherService.getRemainingFreeHours(req.user!.id),
+      ]);
+      res.status(200).json({ 
+        success: true, 
+        credit: balance,
+        freeBookingHours: {
+          remaining: freeHours.remainingHours,
+          totalAllocated: freeHours.totalHoursAllocated,
+          totalUsed: freeHours.totalHoursUsed,
+          earliestExpiry: freeHours.earliestExpiry,
+        },
+      });
     } catch (error) {
       const status = error instanceof BookingServiceError ? error.statusCode : DEFAULT_STATUS;
       logger.error(
