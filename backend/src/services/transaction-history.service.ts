@@ -111,7 +111,7 @@ export async function getTransactionHistory(
     // Calculate voucher value (needed for both booking amount and payment calculation)
     const pricePerHour = parseFloat(booking.pricePerHour.toString());
     const voucherValue = voucherHoursUsed > 0 && pricePerHour > 0
-      ? voucherHoursUsed * pricePerHour
+      ? Math.round((voucherHoursUsed * pricePerHour) * 100) / 100
       : 0;
     
     // Build breakdown array for payment methods used
