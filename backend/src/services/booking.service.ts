@@ -553,7 +553,7 @@ export async function createBooking(
   paymentAmountMade?: number,
   isAdminRequest?: boolean,
   isAdmin?: boolean,
-  paymentIntentId?: string
+  externalPaymentIntentId?: string
 ): Promise<CreateBookingResult> {
   // For free bookings created by admin (for themselves or others), skip membership check
   const skipMembershipCheck = bookingType === 'free' && (isAdmin === true || isAdminRequest === true);
@@ -625,7 +625,7 @@ export async function createBooking(
           voucherHoursUsed: '0.00', // Free bookings use no voucher hours
           status: 'confirmed',
           bookingType,
-          stripePaymentIntentId: (paymentIntentId?.trim() || null),
+          stripePaymentIntentId: (externalPaymentIntentId?.trim() || null),
         })
         .returning({ id: bookings.id });
       if (!created) throw new BookingValidationError('Failed to create booking');
@@ -816,7 +816,7 @@ export async function createBooking(
         voucherHoursUsed: voucherHoursToUse.toFixed(2),
         status: 'confirmed',
         bookingType,
-        stripePaymentIntentId: (paymentIntentId?.trim() || null),
+        stripePaymentIntentId: (externalPaymentIntentId?.trim() || null),
       })
       .returning({ id: bookings.id });
     if (!created) throw new BookingValidationError('Failed to create booking');
@@ -1182,6 +1182,11 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
             refundAmount: stripeRefundAmount,
             userId,
           });
+          
+          // Update email refund amount to reflect only credits refunded (grant failed)
+          if (emailData !== null) {
+            (emailData as { refundAmount: string }).refundAmount = creditUsed.toFixed(2);
+          }
         }
       } else {
         // Date validation failed - log error for manual intervention
@@ -1192,6 +1197,11 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
           bookingDate: bookingDateStr,
           userId,
         });
+        
+        // Update email refund amount to reflect only credits refunded (no grant attempted)
+        if (emailData !== null) {
+          (emailData as { refundAmount: string }).refundAmount = creditUsed.toFixed(2);
+        }
       }
     }
   }
@@ -1426,9 +1436,12 @@ export async function updateBooking(
         bookingDate: newDate,
       });
     } else if (creditDelta < 0) {
-      const [by, bmo] = newDate.split('-').map(Number);
-      const lastDay = new Date(Date.UTC(by, bmo, 0));
-      const expiryDate = lastDay.toISOString().split('T')[0];
+      const expiryDate = computeCreditExpiryFromBookingDate(newDate);
+      if (!expiryDate) {
+        throw new BookingValidationError(
+          `Invalid booking date format for refund: ${newDate}. Expected YYYY-MM or YYYY-MM-DD with valid month (1-12).`
+        );
+      }
       await CreditTransactionService.grantCreditsWithinTransaction(
         tx,
         userId,
