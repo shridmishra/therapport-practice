@@ -268,7 +268,8 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
               bookingType,
               paymentAmountGBP,
               isAdminRequest,
-              isAdmin
+              isAdmin,
+              paymentIntent.id // Pass paymentIntentId to store in booking
             );
             if ('paymentRequired' in result && result.paymentRequired) {
               logger.error('Pay-the-difference createBooking returned paymentRequired', {

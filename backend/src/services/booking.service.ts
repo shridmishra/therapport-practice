@@ -534,7 +534,8 @@ export async function createBooking(
   bookingType: 'permanent_recurring' | 'ad_hoc' | 'free',
   paymentAmountMade?: number,
   isAdminRequest?: boolean,
-  isAdmin?: boolean
+  isAdmin?: boolean,
+  paymentIntentId?: string
 ): Promise<CreateBookingResult> {
   // For free bookings created by admin (for themselves or others), skip membership check
   const skipMembershipCheck = bookingType === 'free' && (isAdmin === true || isAdminRequest === true);
@@ -606,6 +607,7 @@ export async function createBooking(
           voucherHoursUsed: '0.00', // Free bookings use no voucher hours
           status: 'confirmed',
           bookingType,
+          stripePaymentIntentId: paymentIntentId ?? null,
         })
         .returning({ id: bookings.id });
       if (!created) throw new BookingValidationError('Failed to create booking');
@@ -796,6 +798,7 @@ export async function createBooking(
         voucherHoursUsed: voucherHoursToUse.toFixed(2),
         status: 'confirmed',
         bookingType,
+        stripePaymentIntentId: paymentIntentId ?? null,
       })
       .returning({ id: bookings.id });
     if (!created) throw new BookingValidationError('Failed to create booking');
@@ -876,6 +879,11 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
     refundAmount: string;
   } | null = null;
 
+  // Variables for Stripe refund outside transaction
+  let paymentIntentId: string | null = null;
+  let stripeRefundAmount = 0;
+  let bookingDateStr = '';
+
   await db.transaction(async (tx) => {
     const [row] = await tx
       .select({
@@ -946,13 +954,9 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
     const amountCoveredByVouchers = voucherCoveredCents / 100;
     
     // Calculate Stripe payment amount: totalPrice - creditUsed - amountCoveredByVouchers
-    // This represents the amount paid via "pay the difference" (will be refunded as credits)
+    // This represents the amount paid via "pay the difference"
     // Round to 2 decimal places to avoid floating-point drift
     const stripePaymentAmount = Math.max(0, Math.round((totalPrice - creditUsed - amountCoveredByVouchers) * 100) / 100);
-    
-    // Total refund = credits used + Stripe payment made
-    // Round to 2 decimal places to avoid floating-point drift
-    const totalRefund = Math.round((creditUsed + stripePaymentAmount) * 100) / 100;
     
     const cancellationReason = isAdmin ? 'Cancelled by admin' : 'Cancelled by user';
     await tx
@@ -965,11 +969,9 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
       })
       .where(eq(bookings.id, bookingId));
 
-    // Only grant credits if rounded refund is at least £0.01 (1 penny)
-    // AND the booking is not a free booking (free bookings never had payment, so no refund)
-    // This prevents tiny floating-point values from passing the check but becoming 0.00 after toFixed(2)
-    // and prevents free bookings from generating unearned credits
-    if (booking.bookingType !== 'free' && totalRefund >= 0.01) {
+    // Refund credits separately from Stripe payments
+    // Only refund credits if booking is not free and creditUsed > 0
+    if (booking.bookingType !== 'free' && creditUsed >= 0.01) {
       const bookingDate = String(booking.bookingDate);
       if (!/^\d{4}-\d{2}(-\d{2})?$/.test(bookingDate)) {
         throw new BookingValidationError(
@@ -986,20 +988,16 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
       }
       const lastDay = new Date(Date.UTC(y, m, 0));
       const expiryDate = lastDay.toISOString().split('T')[0];
-      // TODO(PR3): Temporary behavior. Replace with logic to refund/restore original debit transactions (or preserve original expiries) in a future change.
-      logger.info('Manual end-of-month grant created for booking cancellation', {
+      logger.info('Refunding credits for booking cancellation', {
         bookingId,
         bookingDate: booking.bookingDate,
-        refundAmount: totalRefund,
         creditRefund: creditUsed,
-        stripePaymentRefund: stripePaymentAmount,
         expiryDate,
-        grantType: 'manual',
       });
       await CreditTransactionService.grantCreditsWithinTransaction(
         tx,
         userId,
-        totalRefund,
+        creditUsed,
         expiryDate,
         'manual',
         undefined,
@@ -1007,17 +1005,137 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
       );
     }
 
+    // Store paymentIntentId, stripePaymentAmount, and bookingDate for Stripe refund outside transaction
+    paymentIntentId = booking.stripePaymentIntentId;
+    stripeRefundAmount = stripePaymentAmount;
+    bookingDateStr = String(booking.bookingDate);
+
     emailData = {
       firstName: row.userFirstName,
       email: row.userEmail,
       roomName: String(row.roomName),
       locationName: String(row.locationName),
-      bookingDate: String(booking.bookingDate),
+      bookingDate: bookingDateStr,
       startTime: formatTimeForEmail(booking.startTime as string | Date),
       endTime: formatTimeForEmail(booking.endTime as string | Date),
-      refundAmount: totalRefund.toFixed(2),
+      refundAmount: (creditUsed + stripeRefundAmount).toFixed(2),
     };
   });
+
+  // Refund Stripe payment outside of DB transaction
+  // This ensures DB transaction completes even if Stripe refund fails
+  // We'll log the error but not rollback the booking cancellation
+  if (stripeRefundAmount >= 0.01 && paymentIntentId) {
+    try {
+      // Retrieve actual payment amount from Stripe to ensure accurate refund
+      // This is more reliable than recalculating, which can have rounding differences
+      let actualPaymentAmountGBP = stripeRefundAmount;
+      let actualPaymentAmountPence = Math.round(stripeRefundAmount * 100);
+      
+      try {
+        const paymentIntent = await StripePaymentService.getPaymentIntent(paymentIntentId);
+        if (paymentIntent.amount_received != null && paymentIntent.amount_received > 0) {
+          actualPaymentAmountPence = paymentIntent.amount_received;
+          actualPaymentAmountGBP = actualPaymentAmountPence / 100;
+          
+          // Validate: warn if calculated amount differs significantly from actual Stripe amount
+          const calculatedPence = Math.round(stripeRefundAmount * 100);
+          const differencePence = Math.abs(actualPaymentAmountPence - calculatedPence);
+          if (differencePence > 1) {
+            // More than 1 pence difference - log warning but use actual amount
+            logger.warn('Calculated refund amount differs from actual Stripe payment amount', {
+              bookingId,
+              paymentIntentId,
+              calculatedAmountGBP: stripeRefundAmount,
+              calculatedAmountPence: calculatedPence,
+              actualAmountGBP: actualPaymentAmountGBP,
+              actualAmountPence: actualPaymentAmountPence,
+              differencePence,
+              userId,
+            });
+          }
+        } else {
+          // Payment intent exists but amount_received is null/zero - use calculated amount
+          logger.warn('Stripe payment intent has no amount_received, using calculated refund amount', {
+            bookingId,
+            paymentIntentId,
+            calculatedAmountGBP: stripeRefundAmount,
+            userId,
+          });
+        }
+      } catch (retrieveError) {
+        // If we can't retrieve from Stripe, use calculated amount as fallback
+        logger.warn('Failed to retrieve payment intent from Stripe, using calculated refund amount', {
+          bookingId,
+          paymentIntentId,
+          calculatedAmountGBP: stripeRefundAmount,
+          error: retrieveError instanceof Error ? retrieveError.message : String(retrieveError),
+          userId,
+        });
+      }
+      
+      await StripePaymentService.refundPayment({
+        paymentIntentId,
+        amount: actualPaymentAmountPence,
+      });
+      logger.info('Stripe payment refunded for booking cancellation', {
+        bookingId,
+        paymentIntentId,
+        refundAmountGBP: actualPaymentAmountGBP,
+        refundAmountPence: actualPaymentAmountPence,
+        wasCalculated: actualPaymentAmountGBP !== stripeRefundAmount,
+        originalCalculatedAmountGBP: stripeRefundAmount,
+      });
+    } catch (stripeError) {
+      // Log error but don't fail the cancellation
+      // The booking is already cancelled in DB, credits are already refunded
+      // Admin can manually refund via Stripe dashboard if needed
+      logger.error('Failed to refund Stripe payment for booking cancellation', stripeError instanceof Error ? stripeError : new Error(String(stripeError)), {
+        bookingId,
+        paymentIntentId,
+        refundAmountGBP: stripeRefundAmount,
+        userId,
+      });
+    }
+  } else if (stripeRefundAmount >= 0.01 && !paymentIntentId) {
+    // Fallback: if paymentIntentId is missing but payment was made, refund as credits
+    // This handles edge cases where paymentIntentId wasn't stored (backward compatibility)
+    logger.warn('Stripe payment amount detected but paymentIntentId missing, refunding as credits', {
+      bookingId,
+      stripePaymentAmount: stripeRefundAmount,
+      userId,
+    });
+    if (/^\d{4}-\d{2}(-\d{2})?$/.test(bookingDateStr)) {
+      const parts = bookingDateStr.split('-').map(Number);
+      const y = parts[0];
+      const m = parts[1];
+      if (m >= 1 && m <= 12) {
+        const lastDay = new Date(Date.UTC(y, m, 0));
+        const expiryDate = lastDay.toISOString().split('T')[0];
+        try {
+          await CreditTransactionService.grantCredits(
+            userId,
+            stripeRefundAmount,
+            expiryDate,
+            'manual',
+            undefined,
+            'Refund for booking cancellation (Stripe payment fallback)'
+          );
+          logger.info('Refunded missing Stripe payment as credits', {
+            bookingId,
+            refundAmount: stripeRefundAmount,
+            expiryDate,
+          });
+        } catch (creditError) {
+          logger.error('Failed to refund missing Stripe payment as credits', creditError instanceof Error ? creditError : new Error(String(creditError)), {
+            bookingId,
+            refundAmount: stripeRefundAmount,
+            userId,
+          });
+        }
+      }
+    }
+  }
 
   if (emailData) {
     emailService.sendBookingCancellation(emailData).catch((err) =>
