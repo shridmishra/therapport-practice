@@ -453,8 +453,22 @@ export const adminApi = {
     >('/admin/stats', { params });
   },
 
-  getPractitioners: (search?: string, page = 1, limit = 10) => {
-    const params = { ...(search ? { search } : {}), page, limit };
+  getPractitioners: (
+    search?: string,
+    page = 1,
+    limit = 10,
+    sortBy?: 'name' | 'membership' | 'status',
+    sortOrder: 'asc' | 'desc' = 'asc'
+  ) => {
+    const params: Record<string, string | number> = {
+      ...(search ? { search } : {}),
+      page,
+      limit,
+    };
+    if (sortBy) {
+      params.sortBy = sortBy;
+      params.sortOrder = sortOrder;
+    }
     // Refine the type to include mandatory pagination at the top level
     return api.get<
       ApiResponse<

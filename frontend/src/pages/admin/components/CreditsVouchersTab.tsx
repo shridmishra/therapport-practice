@@ -35,6 +35,14 @@ export const CreditsVouchersTab: React.FC<CreditsVouchersTabProps> = ({
   const [expiryDate, setExpiryDate] = useState('');
   const [reason, setReason] = useState('');
 
+  // Helper function to safely format remaining credit with defensive guards
+  const formatRemainingCredit = (value: unknown): string => {
+    if (typeof value !== 'number' || !isFinite(value)) {
+      return '0.00';
+    }
+    return value.toFixed(2);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const h = parseFloat(hours);
@@ -56,14 +64,43 @@ export const CreditsVouchersTab: React.FC<CreditsVouchersTabProps> = ({
         <>
           <div>
             <h4 className="text-sm font-medium mb-2">Remaining credit</h4>
-            {credit?.membershipType === 'ad_hoc' && credit?.currentMonth ? (
-              <div className="text-2xl font-bold">
-                £{credit.currentMonth.remainingCredit.toFixed(2)}
-              </div>
-            ) : credit?.membershipType === 'permanent' ? (
+            {credit?.membershipType === 'permanent' ? (
               <p className="text-slate-500 text-sm">
                 Permanent members are billed outside the app.
               </p>
+            ) : credit?.byMonth && credit.byMonth.length > 0 ? (
+              <div className="space-y-2">
+                {credit.byMonth.map((monthCredit) => {
+                  // Format month from YYYY-MM to "MMM YYYY" (e.g., "2026-02" -> "Feb 2026")
+                  // Validate month format before parsing to prevent Invalid Date
+                  const monthFormatRegex = /^\d{4}-\d{2}$/;
+                  if (!monthFormatRegex.test(monthCredit.month)) {
+                    // Fallback to raw string if format is invalid
+                    return (
+                      <div key={monthCredit.month} className="flex items-center gap-3 py-1">
+                        <span className="text-sm font-medium">{monthCredit.month}</span>
+                        <span className="text-lg font-bold">£{formatRemainingCredit(monthCredit.remainingCredit)}</span>
+                      </div>
+                    );
+                  }
+                  const [year, month] = monthCredit.month.split('-');
+                  const date = new Date(parseInt(year), parseInt(month) - 1, 1);
+                  const monthName = date.toLocaleDateString('en-GB', {
+                    month: 'short',
+                    year: 'numeric',
+                  });
+                  return (
+                    <div key={monthCredit.month} className="flex items-center gap-3 py-1">
+                      <span className="text-sm font-medium">{monthName}</span>
+                      <span className="text-lg font-bold">£{formatRemainingCredit(monthCredit.remainingCredit)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : credit?.currentMonth ? (
+              <div className="text-2xl font-bold">
+                £{formatRemainingCredit(credit.currentMonth.remainingCredit)}
+              </div>
             ) : (
               <p className="text-slate-500 text-sm">No membership or ad-hoc credit.</p>
             )}
@@ -96,7 +133,7 @@ export const CreditsVouchersTab: React.FC<CreditsVouchersTabProps> = ({
                   </TableBody>
                 </Table>
                 <div className="px-4 py-2 text-sm text-slate-500 border-t">
-                  Total remaining: {voucher.remainingHours.toFixed(1)}h
+                  Total remaining: {typeof voucher.remainingHours === 'number' && isFinite(voucher.remainingHours) ? voucher.remainingHours.toFixed(1) : '0.0'}h
                   {voucher.earliestExpiry && ` (earliest expiry: ${voucher.earliestExpiry})`}
                 </div>
               </div>
