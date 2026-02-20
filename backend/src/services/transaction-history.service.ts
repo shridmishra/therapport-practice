@@ -140,8 +140,8 @@ export async function getTransactionHistory(
       }
     }
     
-    // Add voucher breakdown if vouchers were used
-    if (voucherHoursUsed > 0) {
+    // Add voucher breakdown if vouchers were used (check monetary value for consistency with credits/stripe)
+    if (voucherValue > 0.01) {
       breakdown.push({
         type: 'voucher',
         amount: voucherValue,
