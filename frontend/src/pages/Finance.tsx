@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -26,11 +26,20 @@ function formatInvoiceDate(created: number): string {
   });
 }
 
+interface BreakdownItem {
+  type: 'credits' | 'stripe' | 'voucher';
+  amount: number;
+  description: string;
+  hours?: number;
+}
+
 interface TransactionHistoryEntry {
   date: string;
   description: string;
   amount: number;
   type: 'credit_grant' | 'booking' | 'voucher_allocation' | 'stripe_payment';
+  bookingId?: string;
+  breakdown?: BreakdownItem[];
 }
 
 export const Finance: React.FC = () => {
@@ -206,14 +215,23 @@ export const Finance: React.FC = () => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {transactionHistory.map((transaction, idx) => (
-                              <TableRow
-                                key={`${transaction.date}-${transaction.description}-${transaction.amount}-${idx}`}
-                              >
+                        {transactionHistory.map((transaction, idx) => {
+                          const hasBreakdown = transaction.type === 'booking' && transaction.breakdown && transaction.breakdown.length > 0;
+                          
+                          return (
+                            <React.Fragment key={`${transaction.date}-${transaction.description}-${transaction.amount}-${idx}`}>
+                              {/* Main transaction row */}
+                              <TableRow>
                                 <TableCell className="font-medium">
                                   {formatTransactionDate(transaction.date)}
                                 </TableCell>
-                                <TableCell>{transaction.description}</TableCell>
+                                <TableCell>
+                                  {transaction.type === 'booking' ? (
+                                    <span className="font-medium">{transaction.description}</span>
+                                  ) : (
+                                    transaction.description
+                                  )}
+                                </TableCell>
                                 <TableCell
                                   className={`text-right font-medium ${
                                     transaction.amount > 0
@@ -223,10 +241,47 @@ export const Finance: React.FC = () => {
                                       : 'text-slate-500 dark:text-slate-400'
                                   }`}
                                 >
-                                  {formatTransactionAmount(transaction.amount)}
+                                  {transaction.type === 'booking' && hasBreakdown ? (
+                                    // For bookings with breakdown, show total as negative (cost)
+                                    formatTransactionAmount(-transaction.amount)
+                                  ) : (
+                                    formatTransactionAmount(transaction.amount)
+                                  )}
                                 </TableCell>
                               </TableRow>
-                        ))}
+                              
+                              {/* Sub-rows for breakdown */}
+                              {hasBreakdown && transaction.breakdown!.map((item, breakdownIdx) => (
+                                <TableRow key={`breakdown-${idx}-${breakdownIdx}`} className="bg-slate-50/50 dark:bg-slate-900/50">
+                                  <TableCell></TableCell>
+                                  <TableCell className="pl-8 text-sm text-slate-600 dark:text-slate-400">
+                                    {item.type === 'voucher' && item.hours ? (
+                                      `${item.description}: ${item.hours.toFixed(1)} hour${item.hours !== 1 ? 's' : ''}`
+                                    ) : (
+                                      `${item.description}`
+                                    )}
+                                  </TableCell>
+                                  <TableCell
+                                    className={`text-right text-sm ${
+                                      item.type === 'stripe'
+                                        ? 'text-green-600 dark:text-green-400'
+                                        : item.type === 'credits'
+                                        ? 'text-slate-600 dark:text-slate-400'
+                                        : 'text-slate-500 dark:text-slate-400'
+                                    }`}
+                                  >
+                                    {item.type === 'voucher' ? (
+                                      '—'
+                                    ) : (
+                                      // Show positive amounts for breakdown items (credits used, Stripe paid)
+                                      `£${item.amount.toFixed(2)}`
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </React.Fragment>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>

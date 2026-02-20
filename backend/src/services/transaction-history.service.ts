@@ -3,12 +3,21 @@ import { creditTransactions, bookings, freeBookingVouchers, rooms } from '../db/
 import { eq, and, gte, lte, asc } from 'drizzle-orm';
 import { getMonthRange, formatTimeForDisplay } from '../utils/date.util';
 
+export interface BreakdownItem {
+  type: 'credits' | 'stripe' | 'voucher';
+  amount: number;
+  description: string;
+  hours?: number; // For vouchers
+}
+
 export interface TransactionHistoryEntry {
   date: string; // YYYY-MM-DD
   description: string;
-  amount: number; // positive for credits, negative for spending, 0 for vouchers
+  amount: number; // stored as positive: credits (positive), bookings (positive, frontend negates for display), vouchers (0), free bookings (0)
   type: 'credit_grant' | 'booking' | 'voucher_allocation' | 'stripe_payment';
   createdAt?: Date; // Internal field for sorting (not exposed to frontend)
+  bookingId?: string; // Optional: link to group related entries
+  breakdown?: BreakdownItem[]; // Optional: payment breakdown for bookings
 }
 
 /**
@@ -99,40 +108,60 @@ export async function getTransactionHistory(
     const [bookingYear, bookingMonth, bookingDay] = bookingDateStr.split('-');
     const formattedBookingDate = `${bookingDay}.${bookingMonth}.${bookingYear}`;
     
-    // Show the credit used as negative (what was deducted from credits)
-    // Use createdAt date (when booking was created) and include booking date in description
-    transactions.push({
-      date: booking.createdAt.toISOString().split('T')[0], // Use creation date (when transaction happened)
-      description: `Booking ${room.name}, ${formattedBookingDate} ${startTime} to ${endTime}`,
-      amount: -creditUsed,
-      type: 'booking',
-      createdAt: booking.createdAt,
-    });
+    // Calculate voucher value (needed for both booking amount and payment calculation)
+    const pricePerHour = parseFloat(booking.pricePerHour.toString());
+    const voucherValue = voucherHoursUsed > 0 && pricePerHour > 0
+      ? Math.round((voucherHoursUsed * pricePerHour) * 100) / 100
+      : 0;
     
-    // Calculate if there was a pay-the-difference payment
-    // Skip this for free bookings - they don't have any payments
+    // Build breakdown array for payment methods used
+    const breakdown: BreakdownItem[] = [];
+    
+    // Add credits breakdown if credits were used
+    if (creditUsed > 0.01) {
+      breakdown.push({
+        type: 'credits',
+        amount: creditUsed,
+        description: 'Credits used',
+      });
+    }
+    
+    // Add Stripe payment breakdown if payment was made (skip for free bookings)
     if (booking.bookingType !== 'free') {
-      // Payment amount = totalPrice - creditUsed - voucherValue
-      // Voucher value = voucherHoursUsed * pricePerHour (using stored pricePerHour for accuracy)
-      const pricePerHour = parseFloat(booking.pricePerHour.toString());
-      const voucherValue = voucherHoursUsed > 0 && pricePerHour > 0
-        ? voucherHoursUsed * pricePerHour
-        : 0;
-      
-      // Only show Stripe transaction if payment amount is significant (more than 0.01 to account for rounding)
-      // This means the user actually paid a difference amount, not just rounding differences
-      // Round to 2 decimal places to avoid floating-point arithmetic errors
-      const paymentAmount = Math.round((totalPrice - creditUsed - voucherValue) * 100) / 100;
+      // Clamp to zero to prevent negative values due to floating-point rounding differences
+      // This ensures breakdown always sums correctly to totalPrice
+      const paymentAmount = Math.max(0, Math.round((totalPrice - creditUsed - voucherValue) * 100) / 100);
       if (paymentAmount > 0.01) {
-        transactions.push({
-          date: booking.createdAt.toISOString().split('T')[0], // Use creation date (when transaction happened)
-          description: 'Stripe transaction',
+        breakdown.push({
+          type: 'stripe',
           amount: paymentAmount,
-          type: 'stripe_payment', // Use stripe_payment type to accurately represent Stripe payments
-          createdAt: booking.createdAt, // Use booking createdAt for chronological ordering
+          description: 'Stripe payment',
         });
       }
     }
+    
+    // Add voucher breakdown if vouchers were used (check monetary value for consistency with credits/stripe)
+    if (voucherValue > 0.01) {
+      breakdown.push({
+        type: 'voucher',
+        amount: voucherValue,
+        description: 'Voucher',
+        hours: voucherHoursUsed,
+      });
+    }
+    
+    // Create main booking entry with breakdown
+    // Show total booking cost (positive amount for clarity, frontend will handle display)
+    // For free bookings, set amount to 0 since they have no cost
+    transactions.push({
+      date: booking.createdAt.toISOString().split('T')[0], // Use creation date (when transaction happened)
+      description: `Booking ${room.name}, ${formattedBookingDate} ${startTime} to ${endTime}`,
+      amount: booking.bookingType === 'free' ? 0 : totalPrice, // Free bookings show £0.00, others show total cost
+      type: 'booking',
+      bookingId: booking.id, // Link to group related entries
+      breakdown: breakdown.length > 0 ? breakdown : undefined, // Only include if there's a breakdown
+      createdAt: booking.createdAt,
+    });
   }
 
   // Get voucher allocations for the month
