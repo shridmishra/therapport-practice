@@ -71,7 +71,7 @@ export class VoucherService {
     }, null);
 
     // Get the latest expiry date for display (used in dashboard)
-    // This shows the expiry of the most recently allocated voucher
+    // This shows the furthest expiry date among all active vouchers
     const latestExpiry = vouchers.reduce<string | null>((max, voucher) => {
       const expiryDate = voucher.expiryDate;
       if (!expiryDate || typeof expiryDate !== 'string' || expiryDate.trim() === '') {

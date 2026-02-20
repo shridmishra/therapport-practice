@@ -27,7 +27,7 @@ interface DashboardData {
     remaining: number;
     totalAllocated: number;
     totalUsed: number;
-    earliestExpiry: string | null;
+    latestExpiry: string | null;
   };
   credit: {
     currentMonth: {
@@ -655,9 +655,9 @@ export const Dashboard: React.FC = () => {
                 </span>
                 <span className="text-slate-500 font-bold">Hours</span>
               </div>
-              {dashboardData?.freeBookingHours.earliestExpiry ? (
+              {dashboardData?.freeBookingHours.latestExpiry ? (
                 <p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
-                  Expires: {formatExpiryDate(dashboardData.freeBookingHours.earliestExpiry)}
+                  Expires: {formatExpiryDate(dashboardData.freeBookingHours.latestExpiry)}
                 </p>
               ) : (
                 <p className="text-xs text-slate-400 dark:text-slate-500 font-medium">

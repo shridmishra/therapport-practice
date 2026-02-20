@@ -13,7 +13,7 @@ export interface BreakdownItem {
 export interface TransactionHistoryEntry {
   date: string; // YYYY-MM-DD
   description: string;
-  amount: number; // positive for credits, negative for spending, 0 for vouchers
+  amount: number; // stored as positive: credits (positive), bookings (positive, frontend negates for display), vouchers (0), free bookings (0)
   type: 'credit_grant' | 'booking' | 'voucher_allocation' | 'stripe_payment';
   createdAt?: Date; // Internal field for sorting (not exposed to frontend)
   bookingId?: string; // Optional: link to group related entries
@@ -150,10 +150,11 @@ export async function getTransactionHistory(
     
     // Create main booking entry with breakdown
     // Show total booking cost (positive amount for clarity, frontend will handle display)
+    // For free bookings, set amount to 0 since they have no cost
     transactions.push({
       date: booking.createdAt.toISOString().split('T')[0], // Use creation date (when transaction happened)
       description: `Booking ${room.name}, ${formattedBookingDate} ${startTime} to ${endTime}`,
-      amount: totalPrice, // Total booking cost (positive, frontend will format as needed)
+      amount: booking.bookingType === 'free' ? 0 : totalPrice, // Free bookings show £0.00, others show total cost
       type: 'booking',
       bookingId: booking.id, // Link to group related entries
       breakdown: breakdown.length > 0 ? breakdown : undefined, // Only include if there's a breakdown

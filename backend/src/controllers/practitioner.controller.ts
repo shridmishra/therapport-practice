@@ -477,7 +477,7 @@ export class PractitionerController {
             remaining: voucherSummary.remainingHours,
             totalAllocated: voucherSummary.totalHoursAllocated,
             totalUsed: voucherSummary.totalHoursUsed,
-            earliestExpiry: voucherSummary.latestExpiry, // Use latestExpiry for dashboard display
+            latestExpiry: voucherSummary.latestExpiry, // Latest expiry date among all active vouchers
           },
           credit: creditSummary,
           upcomingBookings: formattedBookings,
