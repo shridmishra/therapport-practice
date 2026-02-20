@@ -128,7 +128,9 @@ export async function getTransactionHistory(
     
     // Add Stripe payment breakdown if payment was made (skip for free bookings)
     if (booking.bookingType !== 'free') {
-      const paymentAmount = Math.round((totalPrice - creditUsed - voucherValue) * 100) / 100;
+      // Clamp to zero to prevent negative values due to floating-point rounding differences
+      // This ensures breakdown always sums correctly to totalPrice
+      const paymentAmount = Math.max(0, Math.round((totalPrice - creditUsed - voucherValue) * 100) / 100);
       if (paymentAmount > 0.01) {
         breakdown.push({
           type: 'stripe',
