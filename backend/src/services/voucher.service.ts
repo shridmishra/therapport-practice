@@ -7,6 +7,7 @@ export interface VoucherSummary {
   totalHoursUsed: number;
   remainingHours: number;
   earliestExpiry: string | null;
+  latestExpiry: string | null;
   vouchers: Array<{
     id: string;
     hoursAllocated: number;
@@ -59,7 +60,7 @@ export class VoucherService {
 
     const totalRemaining = Math.max(0, totalHoursAllocated - totalHoursUsed);
 
-    // Get the earliest expiry date for display
+    // Get the earliest expiry date for display (used in admin view)
     // Compare expiryDate strings lexicographically (ISO YYYY-MM-DD format compares correctly as strings)
     const earliestExpiry = vouchers.reduce<string | null>((min, voucher) => {
       const expiryDate = voucher.expiryDate;
@@ -69,12 +70,23 @@ export class VoucherService {
       return min === null || expiryDate < min ? expiryDate : min;
     }, null);
 
+    // Get the latest expiry date for display (used in dashboard)
+    // This shows the expiry of the most recently allocated voucher
+    const latestExpiry = vouchers.reduce<string | null>((max, voucher) => {
+      const expiryDate = voucher.expiryDate;
+      if (!expiryDate || typeof expiryDate !== 'string' || expiryDate.trim() === '') {
+        return max;
+      }
+      return max === null || expiryDate > max ? expiryDate : max;
+    }, null);
+
     return {
       totalHoursAllocated,
       totalHoursUsed,
       remainingHours: totalRemaining,
       vouchers,
       earliestExpiry,
+      latestExpiry,
     };
   }
 }
