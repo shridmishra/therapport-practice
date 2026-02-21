@@ -782,7 +782,8 @@ export async function createBooking(
       .where(
         and(eq(freeBookingVouchers.userId, userId), gte(freeBookingVouchers.expiryDate, date))
       )
-      .orderBy(asc(freeBookingVouchers.expiryDate));
+      .orderBy(asc(freeBookingVouchers.expiryDate))
+      .for('update');
     const remainingVoucherHours = voucherRows.reduce((sum, v) => {
       const used = parseFloat(v.hoursUsed.toString());
       const allocated = parseFloat(v.hoursAllocated.toString());
@@ -1049,7 +1050,8 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
             gt(freeBookingVouchers.hoursUsed, '0')
           )
         )
-        .orderBy(desc(freeBookingVouchers.expiryDate));
+        .orderBy(desc(freeBookingVouchers.expiryDate))
+        .for('update');
       
       let remainingToRefund = voucherHoursUsed;
       for (const v of voucherRows) {
