@@ -976,10 +976,19 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
     const voucherCoveredCents = totalPriceCents - creditAmountCents;
     const amountCoveredByVouchers = voucherCoveredCents / 100;
     
-    // Calculate Stripe payment amount: totalPrice - creditUsed - amountCoveredByVouchers
-    // This represents the amount paid via "pay the difference"
-    // Round to 2 decimal places to avoid floating-point drift
-    const stripePaymentAmount = Math.max(0, Math.round((totalPrice - creditUsed - amountCoveredByVouchers) * 100) / 100);
+    // Use stored Stripe payment amount if available (most accurate, matches Stripe dashboard and transaction history)
+    // Otherwise calculate it for older bookings that don't have stored amount
+    let stripePaymentAmount: number;
+    if (booking.stripePaymentAmount != null) {
+      // Use the stored amount from Stripe (most accurate, matches Stripe dashboard)
+      stripePaymentAmount = parseFloat(booking.stripePaymentAmount.toString());
+    } else {
+      // Fallback to calculation for older bookings that don't have stored amount
+      // Calculate Stripe payment amount: totalPrice - creditUsed - amountCoveredByVouchers
+      // This represents the amount paid via "pay the difference"
+      // Round to 2 decimal places to avoid floating-point drift
+      stripePaymentAmount = Math.max(0, Math.round((totalPrice - creditUsed - amountCoveredByVouchers) * 100) / 100);
+    }
     
     const cancellationReason = isAdmin ? 'Cancelled by admin' : 'Cancelled by user';
     await tx
@@ -1020,16 +1029,17 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
     }
 
     // Refund free hours vouchers if they were used
-    // Refund in ascending order (oldest expiry first) to match consumption order
-    // This ensures we refund the vouchers that were actually used for this booking
+    // Refund in descending order (newest expiry first, LIFO) to reverse FIFO consumption
+    // Vouchers are consumed oldest-first (FIFO), so refund newest-first (LIFO) to correctly reverse
+    // This ensures we refund from the most recently used vouchers first
     if (voucherHoursUsed >= 0.01) {
       logger.info('Refunding voucher hours for booking cancellation', {
         bookingId,
         voucherHoursRefund: voucherHoursUsed,
       });
       
-      // Get vouchers with hoursUsed > 0, sorted by expiry date ascending (oldest first)
-      // This matches the consumption order used during booking creation
+      // Get vouchers with hoursUsed > 0, sorted by expiry date descending (newest first, LIFO)
+      // This reverses the FIFO consumption order used during booking creation
       const voucherRows = await tx
         .select()
         .from(freeBookingVouchers)
@@ -1039,7 +1049,7 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
             gt(freeBookingVouchers.hoursUsed, '0')
           )
         )
-        .orderBy(asc(freeBookingVouchers.expiryDate));
+        .orderBy(desc(freeBookingVouchers.expiryDate));
       
       let remainingToRefund = voucherHoursUsed;
       for (const v of voucherRows) {
