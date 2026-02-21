@@ -99,6 +99,13 @@
       "when": 1771613093374,
       "tag": "0013_sudden_skrulls",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "5",
+      "when": 1771692003642,
+      "tag": "0014_add_stripe_payment_amount",
+      "breakpoints": true
     }
   ]
 }

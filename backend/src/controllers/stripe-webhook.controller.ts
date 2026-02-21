@@ -269,7 +269,8 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
               paymentAmountGBP,
               isAdminRequest,
               isAdmin,
-              paymentIntent.id // Pass paymentIntentId to store in booking
+              paymentIntent.id, // Pass paymentIntentId to store in booking
+              paymentAmountGBP // Pass actual Stripe payment amount to store in database
             );
             if ('paymentRequired' in result && result.paymentRequired) {
               logger.error('Pay-the-difference createBooking returned paymentRequired', {

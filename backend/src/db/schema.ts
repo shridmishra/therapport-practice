@@ -131,6 +131,7 @@ export const bookings = pgTable('bookings', {
   status: bookingStatusEnum('status').notNull().default('confirmed'),
   bookingType: bookingTypeEnum('booking_type').notNull(),
   stripePaymentIntentId: varchar('stripe_payment_intent_id', { length: 255 }),
+  stripePaymentAmount: decimal('stripe_payment_amount', { precision: 10, scale: 2 }),
   cancelledAt: timestamp('cancelled_at'),
   cancellationReason: text('cancellation_reason'),
   createdAt: timestamp('created_at').notNull().defaultNow(),

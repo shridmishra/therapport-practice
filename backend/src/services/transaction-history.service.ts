@@ -133,9 +133,16 @@ export async function getTransactionHistory(
     
     // Add Stripe payment breakdown if payment was made (skip for free bookings)
     if (booking.bookingType !== 'free') {
-      // Clamp to zero to prevent negative values due to floating-point rounding differences
-      // This ensures breakdown always sums correctly to totalPrice
-      const paymentAmount = Math.max(0, Math.round((totalPrice - creditUsed - voucherValue) * 100) / 100);
+      // Use stored Stripe payment amount if available (most accurate), otherwise calculate
+      let paymentAmount: number;
+      if (booking.stripePaymentAmount != null) {
+        // Use the stored amount from Stripe (most accurate, matches Stripe dashboard)
+        paymentAmount = parseFloat(booking.stripePaymentAmount.toString());
+      } else {
+        // Fallback to calculation for older bookings that don't have stored amount
+        paymentAmount = Math.max(0, Math.round((totalPrice - creditUsed - voucherValue) * 100) / 100);
+      }
+      
       if (paymentAmount > 0.01) {
         breakdown.push({
           type: 'stripe',
@@ -168,7 +175,16 @@ export async function getTransactionHistory(
       
       // Add Stripe refund entry if payment was made
       if (booking.bookingType !== 'free') {
-        const paymentAmount = Math.max(0, Math.round((totalPrice - creditUsed - voucherValue) * 100) / 100);
+        // Use stored Stripe payment amount if available (most accurate), otherwise calculate
+        let paymentAmount: number;
+        if (booking.stripePaymentAmount != null) {
+          // Use the stored amount from Stripe (most accurate, matches Stripe dashboard)
+          paymentAmount = parseFloat(booking.stripePaymentAmount.toString());
+        } else {
+          // Fallback to calculation for older bookings that don't have stored amount
+          paymentAmount = Math.max(0, Math.round((totalPrice - creditUsed - voucherValue) * 100) / 100);
+        }
+        
         if (paymentAmount > 0.01) {
           breakdown.push({
             type: 'stripe',

@@ -553,7 +553,8 @@ export async function createBooking(
   paymentAmountMade?: number,
   isAdminRequest?: boolean,
   isAdmin?: boolean,
-  externalPaymentIntentId?: string
+  externalPaymentIntentId?: string,
+  stripePaymentAmount?: number
 ): Promise<CreateBookingResult> {
   // For free bookings created by admin (for themselves or others), skip membership check
   const skipMembershipCheck = bookingType === 'free' && (isAdmin === true || isAdminRequest === true);
@@ -817,6 +818,7 @@ export async function createBooking(
         status: 'confirmed',
         bookingType,
         stripePaymentIntentId: (externalPaymentIntentId?.trim() || null),
+        stripePaymentAmount: stripePaymentAmount != null ? stripePaymentAmount.toFixed(2) : null,
       })
       .returning({ id: bookings.id });
     if (!created) throw new BookingValidationError('Failed to create booking');
