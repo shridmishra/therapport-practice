@@ -1020,14 +1020,16 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
     }
 
     // Refund free hours vouchers if they were used
-    // Refund in reverse order (newest expiry first) to preserve older vouchers
+    // Refund in ascending order (oldest expiry first) to match consumption order
+    // This ensures we refund the vouchers that were actually used for this booking
     if (voucherHoursUsed >= 0.01) {
       logger.info('Refunding voucher hours for booking cancellation', {
         bookingId,
         voucherHoursRefund: voucherHoursUsed,
       });
       
-      // Get vouchers with hoursUsed > 0, sorted by expiry date descending (newest first)
+      // Get vouchers with hoursUsed > 0, sorted by expiry date ascending (oldest first)
+      // This matches the consumption order used during booking creation
       const voucherRows = await tx
         .select()
         .from(freeBookingVouchers)
@@ -1037,7 +1039,7 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
             gt(freeBookingVouchers.hoursUsed, '0')
           )
         )
-        .orderBy(desc(freeBookingVouchers.expiryDate));
+        .orderBy(asc(freeBookingVouchers.expiryDate));
       
       let remainingToRefund = voucherHoursUsed;
       for (const v of voucherRows) {

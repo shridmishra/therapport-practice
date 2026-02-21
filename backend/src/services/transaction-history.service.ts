@@ -8,16 +8,43 @@ export interface BreakdownItem {
   amount: number;
   description: string;
   hours?: number; // For vouchers
+  isRefund?: boolean; // True if this is a refund item
 }
 
 export interface TransactionHistoryEntry {
   date: string; // YYYY-MM-DD
   description: string;
   amount: number; // stored as positive: credits (positive), bookings (positive, frontend negates for display), vouchers (0), free bookings (0)
-  type: 'credit_grant' | 'booking' | 'voucher_allocation' | 'stripe_payment' | 'refund';
+  type: 'credit_grant' | 'booking' | 'voucher_allocation' | 'stripe_payment';
   createdAt?: Date; // Internal field for sorting (not exposed to frontend)
   bookingId?: string; // Optional: link to group related entries
   breakdown?: BreakdownItem[]; // Optional: payment breakdown for bookings
+}
+
+/**
+ * Get the Stripe payment amount for a booking.
+ * Uses stored amount if available (most accurate), otherwise calculates it.
+ */
+function getStripePaymentAmount(
+  booking: {
+    stripePaymentAmount: string | null;
+    bookingType: string;
+  },
+  totalPrice: number,
+  creditUsed: number,
+  voucherValue: number
+): number {
+  if (booking.bookingType === 'free') {
+    return 0;
+  }
+  
+  if (booking.stripePaymentAmount != null) {
+    // Use the stored amount from Stripe (most accurate, matches Stripe dashboard)
+    return parseFloat(booking.stripePaymentAmount.toString());
+  } else {
+    // Fallback to calculation for older bookings that don't have stored amount
+    return Math.max(0, Math.round((totalPrice - creditUsed - voucherValue) * 100) / 100);
+  }
 }
 
 /**
@@ -132,24 +159,13 @@ export async function getTransactionHistory(
     }
     
     // Add Stripe payment breakdown if payment was made (skip for free bookings)
-    if (booking.bookingType !== 'free') {
-      // Use stored Stripe payment amount if available (most accurate), otherwise calculate
-      let paymentAmount: number;
-      if (booking.stripePaymentAmount != null) {
-        // Use the stored amount from Stripe (most accurate, matches Stripe dashboard)
-        paymentAmount = parseFloat(booking.stripePaymentAmount.toString());
-      } else {
-        // Fallback to calculation for older bookings that don't have stored amount
-        paymentAmount = Math.max(0, Math.round((totalPrice - creditUsed - voucherValue) * 100) / 100);
-      }
-      
-      if (paymentAmount > 0.01) {
-        breakdown.push({
-          type: 'stripe',
-          amount: paymentAmount,
-          description: 'Stripe payment',
-        });
-      }
+    const paymentAmount = getStripePaymentAmount(booking, totalPrice, creditUsed, voucherValue);
+    if (paymentAmount > 0.01) {
+      breakdown.push({
+        type: 'stripe',
+        amount: paymentAmount,
+        description: 'Stripe payment',
+      });
     }
     
     // Add voucher breakdown if vouchers were used (check monetary value for consistency with credits/stripe)
@@ -170,28 +186,19 @@ export async function getTransactionHistory(
           type: 'credits',
           amount: creditUsed,
           description: 'Credits refunded',
+          isRefund: true,
         });
       }
       
       // Add Stripe refund entry if payment was made
-      if (booking.bookingType !== 'free') {
-        // Use stored Stripe payment amount if available (most accurate), otherwise calculate
-        let paymentAmount: number;
-        if (booking.stripePaymentAmount != null) {
-          // Use the stored amount from Stripe (most accurate, matches Stripe dashboard)
-          paymentAmount = parseFloat(booking.stripePaymentAmount.toString());
-        } else {
-          // Fallback to calculation for older bookings that don't have stored amount
-          paymentAmount = Math.max(0, Math.round((totalPrice - creditUsed - voucherValue) * 100) / 100);
-        }
-        
-        if (paymentAmount > 0.01) {
-          breakdown.push({
-            type: 'stripe',
-            amount: paymentAmount,
-            description: 'Stripe payment refunded',
-          });
-        }
+      const refundPaymentAmount = getStripePaymentAmount(booking, totalPrice, creditUsed, voucherValue);
+      if (refundPaymentAmount > 0.01) {
+        breakdown.push({
+          type: 'stripe',
+          amount: refundPaymentAmount,
+          description: 'Stripe payment refunded',
+          isRefund: true,
+        });
       }
       
       // Add voucher refund entry if vouchers were used
@@ -201,6 +208,7 @@ export async function getTransactionHistory(
           amount: 0, // Vouchers don't have monetary value in refund
           description: 'Voucher hours refunded',
           hours: voucherHoursUsed,
+          isRefund: true,
         });
       }
     }

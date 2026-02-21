@@ -31,13 +31,14 @@ interface BreakdownItem {
   amount: number;
   description: string;
   hours?: number;
+  isRefund?: boolean; // True if this is a refund item
 }
 
 interface TransactionHistoryEntry {
   date: string;
   description: string;
   amount: number;
-  type: 'credit_grant' | 'booking' | 'voucher_allocation' | 'stripe_payment' | 'refund';
+  type: 'credit_grant' | 'booking' | 'voucher_allocation' | 'stripe_payment';
   bookingId?: string;
   breakdown?: BreakdownItem[];
 }
@@ -216,7 +217,7 @@ export const Finance: React.FC = () => {
                       </TableHeader>
                       <TableBody>
                         {transactionHistory.map((transaction, idx) => {
-                          const hasBreakdown = (transaction.type === 'booking' || transaction.type === 'refund') && transaction.breakdown && transaction.breakdown.length > 0;
+                          const hasBreakdown = transaction.type === 'booking' && transaction.breakdown && transaction.breakdown.length > 0;
                           
                           return (
                             <React.Fragment key={`${transaction.date}-${transaction.description}-${transaction.amount}-${idx}`}>
@@ -226,7 +227,7 @@ export const Finance: React.FC = () => {
                                   {formatTransactionDate(transaction.date)}
                                 </TableCell>
                                 <TableCell>
-                                  {transaction.type === 'booking' || transaction.type === 'refund' ? (
+                                  {transaction.type === 'booking' ? (
                                     <span className="font-medium">{transaction.description}</span>
                                   ) : (
                                     transaction.description
@@ -234,9 +235,7 @@ export const Finance: React.FC = () => {
                                 </TableCell>
                                 <TableCell
                                   className={`text-right font-medium ${
-                                    transaction.type === 'refund'
-                                      ? 'text-green-600 dark:text-green-400'
-                                      : transaction.amount > 0
+                                    transaction.amount > 0
                                       ? 'text-green-600 dark:text-green-400'
                                       : transaction.amount < 0
                                       ? 'text-red-600 dark:text-red-400'
@@ -246,9 +245,6 @@ export const Finance: React.FC = () => {
                                   {transaction.type === 'booking' && hasBreakdown ? (
                                     // For bookings with breakdown, show total as negative (cost)
                                     formatTransactionAmount(-transaction.amount)
-                                  ) : transaction.type === 'refund' ? (
-                                    // For refunds, show as positive (money back)
-                                    formatTransactionAmount(transaction.amount)
                                   ) : (
                                     formatTransactionAmount(transaction.amount)
                                   )}
@@ -257,7 +253,6 @@ export const Finance: React.FC = () => {
                               
                               {/* Sub-rows for breakdown */}
                               {hasBreakdown && transaction.breakdown!.map((item, breakdownIdx) => {
-                                const isRefundItem = item.description.includes('refunded');
                                 return (
                                   <TableRow key={`breakdown-${idx}-${breakdownIdx}`} className="bg-slate-50/50 dark:bg-slate-900/50">
                                     <TableCell></TableCell>
@@ -270,7 +265,7 @@ export const Finance: React.FC = () => {
                                     </TableCell>
                                     <TableCell
                                       className={`text-right text-sm ${
-                                        isRefundItem
+                                        item.isRefund
                                           ? 'text-green-600 dark:text-green-400'
                                           : item.type === 'stripe'
                                           ? 'text-green-600 dark:text-green-400'
