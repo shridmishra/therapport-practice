@@ -1,6 +1,6 @@
 import { db } from '../config/database';
 import { creditTransactions, bookings, freeBookingVouchers, rooms } from '../db/schema';
-import { eq, and, gte, lte, asc } from 'drizzle-orm';
+import { eq, and, gte, lte, asc, desc } from 'drizzle-orm';
 import { getMonthRange, formatTimeForDisplay } from '../utils/date.util';
 
 export interface BreakdownItem {
@@ -14,7 +14,7 @@ export interface TransactionHistoryEntry {
   date: string; // YYYY-MM-DD
   description: string;
   amount: number; // stored as positive: credits (positive), bookings (positive, frontend negates for display), vouchers (0), free bookings (0)
-  type: 'credit_grant' | 'booking' | 'voucher_allocation' | 'stripe_payment';
+  type: 'credit_grant' | 'booking' | 'voucher_allocation' | 'stripe_payment' | 'refund';
   createdAt?: Date; // Internal field for sorting (not exposed to frontend)
   bookingId?: string; // Optional: link to group related entries
   breakdown?: BreakdownItem[]; // Optional: payment breakdown for bookings
@@ -51,6 +51,12 @@ export async function getTransactionHistory(
     .orderBy(asc(creditTransactions.createdAt));
 
   for (const grant of creditGrants) {
+    // Skip credit grants that are refunds for booking cancellations
+    // These are already shown in the booking breakdown
+    if (grant.sourceType === 'manual' && grant.description === 'Refund for booking cancellation') {
+      continue;
+    }
+    
     const amount = parseFloat(grant.amount.toString());
     let description = grant.description || 'Credit grant';
     
@@ -76,7 +82,7 @@ export async function getTransactionHistory(
     });
   }
 
-  // Get bookings for the month
+  // Get bookings for the month (including cancelled bookings)
   // Filter by createdAt to show transactions that happened in the selected month
   const bookingRows = await db
     .select({
@@ -89,8 +95,7 @@ export async function getTransactionHistory(
       and(
         eq(bookings.userId, userId),
         gte(bookings.createdAt, firstDayDate),
-        lte(bookings.createdAt, lastDayDate),
-        eq(bookings.status, 'confirmed')
+        lte(bookings.createdAt, lastDayDate)
       )
     )
     .orderBy(asc(bookings.createdAt));
@@ -150,12 +155,48 @@ export async function getTransactionHistory(
       });
     }
     
+    // If booking is cancelled, add refund items to the breakdown
+    if (booking.status === 'cancelled') {
+      // Add credit refund entry if credits were used
+      if (creditUsed > 0.01) {
+        breakdown.push({
+          type: 'credits',
+          amount: creditUsed,
+          description: 'Credits refunded',
+        });
+      }
+      
+      // Add Stripe refund entry if payment was made
+      if (booking.bookingType !== 'free') {
+        const paymentAmount = Math.max(0, Math.round((totalPrice - creditUsed - voucherValue) * 100) / 100);
+        if (paymentAmount > 0.01) {
+          breakdown.push({
+            type: 'stripe',
+            amount: paymentAmount,
+            description: 'Stripe payment refunded',
+          });
+        }
+      }
+      
+      // Add voucher refund entry if vouchers were used
+      if (voucherHoursUsed > 0.01) {
+        breakdown.push({
+          type: 'voucher',
+          amount: 0, // Vouchers don't have monetary value in refund
+          description: 'Voucher hours refunded',
+          hours: voucherHoursUsed,
+        });
+      }
+    }
+
     // Create main booking entry with breakdown
     // Show total booking cost (positive amount for clarity, frontend will handle display)
     // For free bookings, set amount to 0 since they have no cost
+    // Add "(Cancelled)" suffix to description if booking is cancelled
+    const statusSuffix = booking.status === 'cancelled' ? ' (Cancelled)' : '';
     transactions.push({
       date: booking.createdAt.toISOString().split('T')[0], // Use creation date (when transaction happened)
-      description: `Booking ${room.name}, ${formattedBookingDate} ${startTime} to ${endTime}`,
+      description: `Booking ${room.name}, ${formattedBookingDate} ${startTime} to ${endTime}${statusSuffix}`,
       amount: booking.bookingType === 'free' ? 0 : totalPrice, // Free bookings show £0.00, others show total cost
       type: 'booking',
       bookingId: booking.id, // Link to group related entries

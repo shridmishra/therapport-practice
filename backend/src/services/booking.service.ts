@@ -1,6 +1,6 @@
 import { db } from '../config/database';
 import { bookings, rooms, locations, memberships, users, freeBookingVouchers } from '../db/schema';
-import { eq, and, gte, gt, lte, asc, inArray, not } from 'drizzle-orm';
+import { eq, and, gte, gt, lte, asc, desc, inArray, not } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { todayUtcString, formatTimeForEmail } from '../utils/date.util';
 import { fromZonedTime } from 'date-fns-tz';
@@ -1015,6 +1015,55 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
         undefined,
         'Refund for booking cancellation'
       );
+    }
+
+    // Refund free hours vouchers if they were used
+    // Refund in reverse order (newest expiry first) to preserve older vouchers
+    if (voucherHoursUsed >= 0.01) {
+      logger.info('Refunding voucher hours for booking cancellation', {
+        bookingId,
+        voucherHoursRefund: voucherHoursUsed,
+      });
+      
+      // Get vouchers with hoursUsed > 0, sorted by expiry date descending (newest first)
+      const voucherRows = await tx
+        .select()
+        .from(freeBookingVouchers)
+        .where(
+          and(
+            eq(freeBookingVouchers.userId, userId),
+            gt(freeBookingVouchers.hoursUsed, '0')
+          )
+        )
+        .orderBy(desc(freeBookingVouchers.expiryDate));
+      
+      let remainingToRefund = voucherHoursUsed;
+      for (const v of voucherRows) {
+        if (remainingToRefund <= 0) break;
+        const used = parseFloat(v.hoursUsed.toString());
+        const refund = Math.min(used, remainingToRefund);
+        const newUsed = used - refund;
+        
+        await tx
+          .update(freeBookingVouchers)
+          .set({
+            hoursUsed: newUsed.toFixed(2),
+            updatedAt: new Date(),
+          })
+          .where(eq(freeBookingVouchers.id, v.id));
+        
+        remainingToRefund -= refund;
+      }
+      
+      if (remainingToRefund > 0.01) {
+        // This should not happen in normal operation, but log a warning if we couldn't refund all hours
+        logger.warn('Could not fully refund voucher hours - some vouchers may have been deleted or modified', {
+          bookingId,
+          voucherHoursUsed,
+          remainingToRefund,
+          userId,
+        });
+      }
     }
 
     // Store paymentIntentId, stripePaymentAmount, and bookingDate for Stripe refund outside transaction
