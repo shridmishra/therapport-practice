@@ -1033,7 +1033,8 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
     // Refund in descending order (newest expiry first, LIFO) to reverse FIFO consumption
     // Vouchers are consumed oldest-first (FIFO), so refund newest-first (LIFO) to correctly reverse
     // This ensures we refund from the most recently used vouchers first
-    if (voucherHoursUsed >= 0.01) {
+    // Only refund vouchers if booking is not free (free bookings never use vouchers)
+    if (booking.bookingType !== 'free' && voucherHoursUsed >= 0.01) {
       logger.info('Refunding voucher hours for booking cancellation', {
         bookingId,
         voucherHoursRefund: voucherHoursUsed,
@@ -1474,7 +1475,8 @@ export async function updateBooking(
           gte(freeBookingVouchers.expiryDate, newDate)
         )
       )
-      .orderBy(asc(freeBookingVouchers.expiryDate));
+      .orderBy(asc(freeBookingVouchers.expiryDate))
+      .for('update');
     const remainingVoucherHours = voucherRows.reduce((sum, v) => {
       const used = parseFloat(v.hoursUsed.toString());
       const allocated = parseFloat(v.hoursAllocated.toString());
@@ -1616,7 +1618,8 @@ export async function updateBooking(
             gt(freeBookingVouchers.hoursUsed, '0')
           )
         )
-        .orderBy(asc(freeBookingVouchers.expiryDate));
+        .orderBy(desc(freeBookingVouchers.expiryDate))
+        .for('update');
       let remainingToRelease = releaseHours;
       for (const v of rowsWithUsed) {
         if (remainingToRelease <= 0) break;
