@@ -54,6 +54,24 @@ function timeToHours(t: string): number {
 }
 
 /**
+ * Compute credit expiry date from booking date (last day of the booking's month).
+ * Returns null if the date format is invalid or month is out of range.
+ */
+function computeCreditExpiryFromBookingDate(dateStr: string): string | null {
+  if (!/^\d{4}-\d{2}(-\d{2})?$/.test(dateStr)) {
+    return null;
+  }
+  const parts = dateStr.split('-').map(Number);
+  const y = parts[0];
+  const m = parts[1];
+  if (m < 1 || m > 12) {
+    return null;
+  }
+  const lastDay = new Date(Date.UTC(y, m, 0));
+  return lastDay.toISOString().split('T')[0];
+}
+
+/**
  * Check if user can make bookings: active membership, not suspended, ad_hoc within period.
  */
 export async function canUserBook(userId: string): Promise<{ ok: boolean; reason?: string }> {
@@ -534,7 +552,8 @@ export async function createBooking(
   bookingType: 'permanent_recurring' | 'ad_hoc' | 'free',
   paymentAmountMade?: number,
   isAdminRequest?: boolean,
-  isAdmin?: boolean
+  isAdmin?: boolean,
+  externalPaymentIntentId?: string
 ): Promise<CreateBookingResult> {
   // For free bookings created by admin (for themselves or others), skip membership check
   const skipMembershipCheck = bookingType === 'free' && (isAdmin === true || isAdminRequest === true);
@@ -606,6 +625,7 @@ export async function createBooking(
           voucherHoursUsed: '0.00', // Free bookings use no voucher hours
           status: 'confirmed',
           bookingType,
+          stripePaymentIntentId: (externalPaymentIntentId?.trim() || null),
         })
         .returning({ id: bookings.id });
       if (!created) throw new BookingValidationError('Failed to create booking');
@@ -796,6 +816,7 @@ export async function createBooking(
         voucherHoursUsed: voucherHoursToUse.toFixed(2),
         status: 'confirmed',
         bookingType,
+        stripePaymentIntentId: (externalPaymentIntentId?.trim() || null),
       })
       .returning({ id: bookings.id });
     if (!created) throw new BookingValidationError('Failed to create booking');
@@ -861,8 +882,10 @@ export async function createBooking(
 }
 
 /**
- * Cancel a booking and refund credits (full amount as manual credit for PR3; voucher hours not refunded).
- * Booking update and credit grant run in a single transaction so both succeed or both roll back.
+ * Cancel a booking and refund credits and Stripe payments.
+ * Credits are refunded within a transaction (so booking cancellation and credit grant both succeed or both roll back).
+ * Stripe payments are refunded separately outside the transaction to ensure booking cancellation completes even if Stripe refund fails.
+ * Voucher hours are not refunded.
  */
 export async function cancelBooking(bookingId: string, userId: string, isAdmin: boolean = false): Promise<void> {
   let emailData: {
@@ -875,6 +898,12 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
     endTime: string;
     refundAmount: string;
   } | null = null;
+
+  // Variables for Stripe refund outside transaction
+  let paymentIntentId: string | null = null;
+  let stripeRefundAmount = 0;
+  let bookingDateStr = '';
+  let creditUsed = 0;
 
   await db.transaction(async (tx) => {
     const [row] = await tx
@@ -899,9 +928,9 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
 
     // Only enforce 24-hour restriction for non-admin users
     if (!isAdmin) {
-      const bookingDateStr = String(booking.bookingDate);
+      const bookingDateForValidation = String(booking.bookingDate);
       const startTimeStr = formatTimeHHMM(booking.startTime as string | Date);
-      const [y, mo, d] = bookingDateStr.split('-').map(Number);
+      const [y, mo, d] = bookingDateForValidation.split('-').map(Number);
       const [hh, mm] = startTimeStr.split(':').map(Number);
       const bookingStartLocal = new Date(y, mo - 1, d, hh, mm, 0);
       const bookingStartUtc = fromZonedTime(bookingStartLocal, 'Europe/London');
@@ -916,7 +945,7 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
 
     // Calculate refund amounts: credits used + Stripe payment made
     const totalPrice = parseFloat(booking.totalPrice.toString());
-    const creditUsed = parseFloat(String(booking.creditUsed ?? 0));
+    creditUsed = parseFloat(String(booking.creditUsed ?? 0));
     const voucherHoursUsed = parseFloat(String(booking.voucherHoursUsed ?? 0));
     
     // Calculate durationHours from stored times (same as booking creation)
@@ -946,13 +975,9 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
     const amountCoveredByVouchers = voucherCoveredCents / 100;
     
     // Calculate Stripe payment amount: totalPrice - creditUsed - amountCoveredByVouchers
-    // This represents the amount paid via "pay the difference" (will be refunded as credits)
+    // This represents the amount paid via "pay the difference"
     // Round to 2 decimal places to avoid floating-point drift
     const stripePaymentAmount = Math.max(0, Math.round((totalPrice - creditUsed - amountCoveredByVouchers) * 100) / 100);
-    
-    // Total refund = credits used + Stripe payment made
-    // Round to 2 decimal places to avoid floating-point drift
-    const totalRefund = Math.round((creditUsed + stripePaymentAmount) * 100) / 100;
     
     const cancellationReason = isAdmin ? 'Cancelled by admin' : 'Cancelled by user';
     await tx
@@ -965,41 +990,26 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
       })
       .where(eq(bookings.id, bookingId));
 
-    // Only grant credits if rounded refund is at least £0.01 (1 penny)
-    // AND the booking is not a free booking (free bookings never had payment, so no refund)
-    // This prevents tiny floating-point values from passing the check but becoming 0.00 after toFixed(2)
-    // and prevents free bookings from generating unearned credits
-    if (booking.bookingType !== 'free' && totalRefund >= 0.01) {
+    // Refund credits separately from Stripe payments
+    // Only refund credits if booking is not free and creditUsed > 0
+    if (booking.bookingType !== 'free' && creditUsed >= 0.01) {
       const bookingDate = String(booking.bookingDate);
-      if (!/^\d{4}-\d{2}(-\d{2})?$/.test(bookingDate)) {
+      const expiryDate = computeCreditExpiryFromBookingDate(bookingDate);
+      if (!expiryDate) {
         throw new BookingValidationError(
-          `Invalid booking date format for refund: ${bookingDate}. Expected YYYY-MM or YYYY-MM-DD.`
+          `Invalid booking date format for refund: ${bookingDate}. Expected YYYY-MM or YYYY-MM-DD with valid month (1-12).`
         );
       }
-      const parts = bookingDate.split('-').map(Number);
-      const y = parts[0];
-      const m = parts[1];
-      if (m < 1 || m > 12) {
-        throw new BookingValidationError(
-          `Invalid month in booking date: ${bookingDate}. Month must be 1-12.`
-        );
-      }
-      const lastDay = new Date(Date.UTC(y, m, 0));
-      const expiryDate = lastDay.toISOString().split('T')[0];
-      // TODO(PR3): Temporary behavior. Replace with logic to refund/restore original debit transactions (or preserve original expiries) in a future change.
-      logger.info('Manual end-of-month grant created for booking cancellation', {
+      logger.info('Refunding credits for booking cancellation', {
         bookingId,
         bookingDate: booking.bookingDate,
-        refundAmount: totalRefund,
         creditRefund: creditUsed,
-        stripePaymentRefund: stripePaymentAmount,
         expiryDate,
-        grantType: 'manual',
       });
       await CreditTransactionService.grantCreditsWithinTransaction(
         tx,
         userId,
-        totalRefund,
+        creditUsed,
         expiryDate,
         'manual',
         undefined,
@@ -1007,17 +1017,194 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
       );
     }
 
+    // Store paymentIntentId, stripePaymentAmount, and bookingDate for Stripe refund outside transaction
+    paymentIntentId = booking.stripePaymentIntentId;
+    stripeRefundAmount = stripePaymentAmount;
+    bookingDateStr = String(booking.bookingDate);
+
     emailData = {
       firstName: row.userFirstName,
       email: row.userEmail,
       roomName: String(row.roomName),
       locationName: String(row.locationName),
-      bookingDate: String(booking.bookingDate),
+      bookingDate: bookingDateStr,
       startTime: formatTimeForEmail(booking.startTime as string | Date),
       endTime: formatTimeForEmail(booking.endTime as string | Date),
-      refundAmount: totalRefund.toFixed(2),
+      refundAmount: (creditUsed + stripeRefundAmount).toFixed(2),
     };
   });
+
+  // Refund Stripe payment outside of DB transaction
+  // This ensures DB transaction completes even if Stripe refund fails
+  // We'll log the error but not rollback the booking cancellation
+  if (stripeRefundAmount >= 0.01 && paymentIntentId) {
+    try {
+      // Retrieve actual payment amount from Stripe to ensure accurate refund
+      // This is more reliable than recalculating, which can have rounding differences
+      let actualPaymentAmountGBP = stripeRefundAmount;
+      let actualPaymentAmountPence = Math.round(stripeRefundAmount * 100);
+      
+      let shouldAttemptRefund = true;
+      
+      try {
+        const paymentIntent = await StripePaymentService.getPaymentIntent(paymentIntentId);
+        if (paymentIntent.amount_received != null && paymentIntent.amount_received > 0) {
+          actualPaymentAmountPence = paymentIntent.amount_received;
+          actualPaymentAmountGBP = actualPaymentAmountPence / 100;
+          
+          // Validate: warn if calculated amount differs significantly from actual Stripe amount
+          const calculatedPence = Math.round(stripeRefundAmount * 100);
+          const differencePence = Math.abs(actualPaymentAmountPence - calculatedPence);
+          if (differencePence > 1) {
+            // More than 1 pence difference - log warning but use actual amount
+            logger.warn('Calculated refund amount differs from actual Stripe payment amount', {
+              bookingId,
+              paymentIntentId,
+              calculatedAmountGBP: stripeRefundAmount,
+              calculatedAmountPence: calculatedPence,
+              actualAmountGBP: actualPaymentAmountGBP,
+              actualAmountPence: actualPaymentAmountPence,
+              differencePence,
+              userId,
+            });
+          }
+        } else {
+          // Payment intent exists but amount_received is null/zero - skip refund attempt
+          // No payment was actually received, so there's nothing to refund
+          shouldAttemptRefund = false;
+          logger.warn('Stripe payment intent has no amount_received, skipping refund attempt', {
+            bookingId,
+            paymentIntentId,
+            calculatedAmountGBP: stripeRefundAmount,
+            userId,
+          });
+          
+          // Update email refund amount to exclude failed Stripe refund
+          if (emailData !== null) {
+            (emailData as { refundAmount: string }).refundAmount = creditUsed.toFixed(2);
+          }
+        }
+      } catch (retrieveError) {
+        // If we can't retrieve from Stripe, use calculated amount as fallback
+        logger.warn('Failed to retrieve payment intent from Stripe, using calculated refund amount', {
+          bookingId,
+          paymentIntentId,
+          calculatedAmountGBP: stripeRefundAmount,
+          error: retrieveError instanceof Error ? retrieveError.message : String(retrieveError),
+          userId,
+        });
+      }
+      
+      if (shouldAttemptRefund && actualPaymentAmountPence > 0) {
+        await StripePaymentService.refundPayment({
+          paymentIntentId,
+          amount: actualPaymentAmountPence,
+        });
+        logger.info('Stripe payment refunded for booking cancellation', {
+          bookingId,
+          paymentIntentId,
+          refundAmountGBP: actualPaymentAmountGBP,
+          refundAmountPence: actualPaymentAmountPence,
+          wasCalculated: actualPaymentAmountGBP !== stripeRefundAmount,
+          originalCalculatedAmountGBP: stripeRefundAmount,
+        });
+        
+        // Update email refund amount with actual Stripe refund amount
+        if (emailData !== null) {
+          const updatedRefundAmount = (creditUsed + actualPaymentAmountGBP).toFixed(2);
+          (emailData as { refundAmount: string }).refundAmount = updatedRefundAmount;
+        }
+      }
+    } catch (stripeError) {
+      // Log error but don't fail the cancellation
+      // The booking is already cancelled in DB, credits are already refunded
+      // Admin can manually refund via Stripe dashboard if needed
+      logger.error('Failed to refund Stripe payment for booking cancellation', stripeError instanceof Error ? stripeError : new Error(String(stripeError)), {
+        bookingId,
+        paymentIntentId,
+        refundAmountGBP: stripeRefundAmount,
+        userId,
+      });
+      
+      // Update email refund amount to exclude failed Stripe refund
+      // Only credits were refunded, so email should reflect actual refund amount
+      if (emailData !== null && stripeRefundAmount >= 0.01) {
+        (emailData as { refundAmount: string }).refundAmount = creditUsed.toFixed(2);
+      }
+    }
+  } else if (stripeRefundAmount >= 0.01 && !paymentIntentId) {
+    // Fallback: if paymentIntentId is missing but payment was made, refund as credits
+    // This handles edge cases where paymentIntentId wasn't stored (backward compatibility)
+    const fallbackSourceId = `refund:booking:${bookingId}`;
+    
+    // Check if credits were already granted for this booking (idempotency guard)
+    const alreadyGranted = await CreditTransactionService.hasCreditForSourceId(
+      userId,
+      'manual',
+      fallbackSourceId
+    );
+    
+    if (alreadyGranted) {
+      logger.info('Fallback credit refund already granted for booking cancellation (idempotent)', {
+        bookingId,
+        sourceId: fallbackSourceId,
+        refundAmount: stripeRefundAmount,
+        userId,
+      });
+    } else {
+      logger.warn('Stripe payment amount detected but paymentIntentId missing, refunding as credits', {
+        bookingId,
+        stripePaymentAmount: stripeRefundAmount,
+        sourceId: fallbackSourceId,
+        userId,
+      });
+      const expiryDate = computeCreditExpiryFromBookingDate(bookingDateStr);
+      if (expiryDate) {
+        try {
+          await CreditTransactionService.grantCredits(
+            userId,
+            stripeRefundAmount,
+            expiryDate,
+            'manual',
+            fallbackSourceId,
+            'Refund for booking cancellation (Stripe payment fallback)'
+          );
+          logger.info('Refunded missing Stripe payment as credits', {
+            bookingId,
+            sourceId: fallbackSourceId,
+            refundAmount: stripeRefundAmount,
+            expiryDate,
+          });
+        } catch (creditError) {
+          logger.error('Failed to refund missing Stripe payment as credits', creditError instanceof Error ? creditError : new Error(String(creditError)), {
+            bookingId,
+            sourceId: fallbackSourceId,
+            refundAmount: stripeRefundAmount,
+            userId,
+          });
+          
+          // Update email refund amount to reflect only credits refunded (grant failed)
+          if (emailData !== null) {
+            (emailData as { refundAmount: string }).refundAmount = creditUsed.toFixed(2);
+          }
+        }
+      } else {
+        // Date validation failed - log error for manual intervention
+        logger.error('Failed to refund missing Stripe payment as credits: invalid booking date format', {
+          bookingId,
+          sourceId: fallbackSourceId,
+          refundAmount: stripeRefundAmount,
+          bookingDate: bookingDateStr,
+          userId,
+        });
+        
+        // Update email refund amount to reflect only credits refunded (no grant attempted)
+        if (emailData !== null) {
+          (emailData as { refundAmount: string }).refundAmount = creditUsed.toFixed(2);
+        }
+      }
+    }
+  }
 
   if (emailData) {
     emailService.sendBookingCancellation(emailData).catch((err) =>
@@ -1249,9 +1436,12 @@ export async function updateBooking(
         bookingDate: newDate,
       });
     } else if (creditDelta < 0) {
-      const [by, bmo] = newDate.split('-').map(Number);
-      const lastDay = new Date(Date.UTC(by, bmo, 0));
-      const expiryDate = lastDay.toISOString().split('T')[0];
+      const expiryDate = computeCreditExpiryFromBookingDate(newDate);
+      if (!expiryDate) {
+        throw new BookingValidationError(
+          `Invalid booking date format for refund: ${newDate}. Expected YYYY-MM or YYYY-MM-DD with valid month (1-12).`
+        );
+      }
       await CreditTransactionService.grantCreditsWithinTransaction(
         tx,
         userId,
