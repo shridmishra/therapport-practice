@@ -454,48 +454,31 @@ export async function createInvoiceFromPaymentIntent(
     // Add line item for the payment amount
     // Validate currency - must be 'gbp' (our codebase only supports GBP)
     const currency = paymentIntent.currency;
-    if (!currency) {
-      logger.warn('PaymentIntent currency is missing when creating invoice line item', {
+    if (!currency || currency.toLowerCase() !== 'gbp') {
+      const reason = !currency 
+        ? 'PaymentIntent currency is missing when creating invoice line item'
+        : 'PaymentIntent currency is not GBP when creating invoice line item';
+      
+      logger.warn(reason, {
         paymentIntentId,
         customerId,
         invoiceId: invoice.id,
+        ...(currency && { currency }),
       });
+      
       // Try to delete the invoice to avoid orphaned state
       try {
         await stripe.invoices.del(invoice.id);
         logger.info('Invoice deleted after currency validation failure', {
           invoiceId: invoice.id,
           paymentIntentId,
+          ...(currency && { currency }),
         });
       } catch (deleteError) {
         logger.error(
           'Failed to delete invoice after currency validation failure',
           deleteError instanceof Error ? deleteError : new Error(String(deleteError)),
-          { invoiceId: invoice.id, paymentIntentId }
-        );
-      }
-      return null;
-    }
-    if (currency.toLowerCase() !== 'gbp') {
-      logger.warn('PaymentIntent currency is not GBP when creating invoice line item', {
-        paymentIntentId,
-        customerId,
-        invoiceId: invoice.id,
-        currency,
-      });
-      // Try to delete the invoice to avoid orphaned state
-      try {
-        await stripe.invoices.del(invoice.id);
-        logger.info('Invoice deleted after currency mismatch', {
-          invoiceId: invoice.id,
-          paymentIntentId,
-          currency,
-        });
-      } catch (deleteError) {
-        logger.error(
-          'Failed to delete invoice after currency mismatch',
-          deleteError instanceof Error ? deleteError : new Error(String(deleteError)),
-          { invoiceId: invoice.id, paymentIntentId, currency }
+          { invoiceId: invoice.id, paymentIntentId, ...(currency && { currency }) }
         );
       }
       return null;
