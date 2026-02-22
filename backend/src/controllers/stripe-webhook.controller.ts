@@ -53,6 +53,44 @@ async function grantPayDifferenceCredits(
   );
 }
 
+/**
+ * Create invoice from PaymentIntent asynchronously (fire-and-forget).
+ * This ensures invoices are created immediately when payment succeeds, matching monthly subscription pattern.
+ * Errors are logged but don't affect the webhook response.
+ */
+function createInvoiceForPaymentIntentAsync(
+  paymentIntentId: string,
+  customerId: string,
+  eventId: string,
+  userId: string,
+  bookingId?: string,
+  errorContext: 'new_booking' | 'update' = 'new_booking'
+): void {
+  StripePaymentService.createInvoiceFromPaymentIntent(paymentIntentId, customerId).catch((err) => {
+    const context: Record<string, string> = {
+      eventId,
+      paymentIntentId,
+      userId,
+      customerId,
+    };
+    if (bookingId) {
+      context.bookingId = bookingId;
+    }
+    
+    const errorMessage =
+      errorContext === 'update'
+        ? 'Failed to create invoice from PaymentIntent in webhook (update)'
+        : 'Failed to create invoice from PaymentIntent in webhook';
+    
+    logger.error(
+      errorMessage,
+      err instanceof Error ? err : new Error(String(err)),
+      context
+    );
+    // Don't throw - invoice creation failure shouldn't affect booking
+  });
+}
+
 /** In-memory map of processed event IDs with timestamps for TTL cleanup (PR 6 minimal). Replace with DB in production. */
 const processedEventIds = new Map<string, number>();
 const EVENT_ID_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -302,22 +340,14 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
                   ? paymentIntent.customer
                   : paymentIntent.customer.id;
                 
-                StripePaymentService.createInvoiceFromPaymentIntent(
+                createInvoiceForPaymentIntentAsync(
                   paymentIntent.id,
-                  customerId
-                ).catch((err) => {
-                  logger.error(
-                    'Failed to create invoice from PaymentIntent in webhook',
-                    err instanceof Error ? err : new Error(String(err)),
-                    {
-                      eventId: event.id,
-                      paymentIntentId: paymentIntent.id,
-                      userId,
-                      customerId,
-                    }
-                  );
-                  // Don't throw - invoice creation failure shouldn't affect booking
-                });
+                  customerId,
+                  event.id,
+                  userId,
+                  result.id,
+                  'new_booking'
+                );
               }
             }
           }
@@ -392,23 +422,14 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
                     ? paymentIntent.customer
                     : paymentIntent.customer.id;
                   
-                  StripePaymentService.createInvoiceFromPaymentIntent(
+                  createInvoiceForPaymentIntentAsync(
                     paymentIntent.id,
-                    customerId
-                  ).catch((err) => {
-                    logger.error(
-                      'Failed to create invoice from PaymentIntent in webhook (update)',
-                      err instanceof Error ? err : new Error(String(err)),
-                      {
-                        eventId: event.id,
-                        paymentIntentId: paymentIntent.id,
-                        userId,
-                        bookingId,
-                        customerId,
-                      }
-                    );
-                    // Don't throw - invoice creation failure shouldn't affect booking update
-                  });
+                    customerId,
+                    event.id,
+                    userId,
+                    bookingId,
+                    'update'
+                  );
                 }
               } catch (updateErr) {
                 if (creditsGrantedThisCall) {
