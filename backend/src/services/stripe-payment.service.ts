@@ -348,12 +348,23 @@ export async function createInvoiceFromPaymentIntent(
       // and replaced with InvoicePayment object, so we rely solely on metadata
       const metadataPaymentIntentId = inv.metadata?.payment_intent_id;
       if (metadataPaymentIntentId === paymentIntentId) {
-        // Invoice already exists, return it
-        logger.info('Invoice already exists for payment intent', {
+        // Only return if invoice is fully completed (paid)
+        // If it's in draft/open state, continue to complete it
+        if (inv.status === 'paid' && inv.amount_paid > 0) {
+          logger.info('Invoice already exists and is paid for payment intent', {
+            paymentIntentId,
+            invoiceId: inv.id,
+          });
+          return inv;
+        }
+        // Invoice exists but not paid - log and continue to complete it
+        logger.info('Invoice exists but not paid, will complete it', {
           paymentIntentId,
           invoiceId: inv.id,
+          status: inv.status,
+          amount_paid: inv.amount_paid,
         });
-        return inv;
+        // Don't return - continue to finalize and pay
       }
     }
     
@@ -535,8 +546,9 @@ export async function createInvoiceFromPaymentIntent(
     }
     
     // Mark as paid since payment was already received
+    let paidInvoice: Stripe.Invoice;
     try {
-      await stripe.invoices.pay(finalizedInvoice.id, {
+      paidInvoice = await stripe.invoices.pay(finalizedInvoice.id, {
         paid_out_of_band: true,
       });
     } catch (payError) {
@@ -552,11 +564,11 @@ export async function createInvoiceFromPaymentIntent(
     
     logger.info('Created invoice from PaymentIntent', {
       paymentIntentId,
-      invoiceId: finalizedInvoice.id,
+      invoiceId: paidInvoice.id,
       amount: paymentIntent.amount_received,
     });
     
-    return finalizedInvoice;
+    return paidInvoice;
   } catch (error) {
     logger.error(
       'Failed to create invoice from PaymentIntent',
