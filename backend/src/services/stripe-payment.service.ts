@@ -1,3 +1,4 @@
+import Stripe from 'stripe';
 import { getStripe, isStripeConfigured } from '../config/stripe';
 import { logger } from '../utils/logger.util';
 
@@ -313,7 +314,209 @@ export interface InvoiceListItem {
 export const LIST_INVOICES_MISSING_CUSTOMER_ID = 'Missing or empty customerId';
 
 /**
+ * Create a Stripe invoice from a PaymentIntent for pay-the-difference payments.
+ * This ensures pay-the-difference payments have invoices in the same format as subscription invoices.
+ * @param paymentIntentId - The Stripe PaymentIntent ID
+ * @param customerId - The Stripe customer ID
+ * @returns The created invoice, or null if invoice creation fails or invoice already exists
+ */
+export async function createInvoiceFromPaymentIntent(
+  paymentIntentId: string,
+  customerId: string
+): Promise<Stripe.Invoice | null> {
+  const stripe = getStripe();
+  
+  if (!paymentIntentId?.trim() || !customerId?.trim()) {
+    logger.warn('Invalid parameters for createInvoiceFromPaymentIntent', {
+      paymentIntentId: paymentIntentId?.trim() || 'missing',
+      customerId: customerId?.trim() || 'missing',
+    });
+    return null;
+  }
+  
+  try {
+    // Check if an invoice already exists for this payment intent
+    const existingInvoices = await stripe.invoices.list({
+      customer: customerId,
+      limit: 100,
+    });
+    
+    for (const inv of existingInvoices.data) {
+      // Check both payment_intent field and metadata
+      // payment_intent can be a string ID or a PaymentIntent object (when expanded)
+      const invPaymentIntent = (inv as any).payment_intent;
+      const invPaymentIntentId = typeof invPaymentIntent === 'string' 
+        ? invPaymentIntent 
+        : invPaymentIntent?.id;
+      if (
+        invPaymentIntentId === paymentIntentId ||
+        (inv.metadata?.payment_intent_id === paymentIntentId)
+      ) {
+        // Invoice already exists, return it
+        logger.info('Invoice already exists for payment intent', {
+          paymentIntentId,
+          invoiceId: inv.id,
+        });
+        return inv;
+      }
+    }
+    
+    // Retrieve the PaymentIntent to get details
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    
+    // Verify customer ID matches
+    if (paymentIntent.customer) {
+      const piCustomerId =
+        typeof paymentIntent.customer === 'string'
+          ? paymentIntent.customer
+          : paymentIntent.customer.id;
+      if (piCustomerId !== customerId) {
+        logger.warn('PaymentIntent customer ID does not match provided customer ID', {
+          paymentIntentId,
+          paymentIntentCustomerId: piCustomerId,
+          providedCustomerId: customerId,
+        });
+        return null;
+      }
+    } else {
+      logger.warn('PaymentIntent has no customer ID', {
+        paymentIntentId,
+      });
+      return null;
+    }
+    
+    // Only create invoice for succeeded payments
+    if (paymentIntent.status !== 'succeeded') {
+      logger.debug('PaymentIntent not succeeded, skipping invoice creation', {
+        paymentIntentId,
+        status: paymentIntent.status,
+      });
+      return null;
+    }
+    
+    if (!paymentIntent.amount_received || paymentIntent.amount_received <= 0) {
+      logger.warn('PaymentIntent has no amount received', {
+        paymentIntentId,
+        amount_received: paymentIntent.amount_received,
+      });
+      return null;
+    }
+    
+    // Extract booking details from metadata for invoice description
+    const metadata = paymentIntent.metadata || {};
+    const date = metadata.date || '';
+    const startTime = metadata.startTime || '';
+    const endTime = metadata.endTime || '';
+    
+    let description = 'Pay the difference for room booking';
+    if (date && startTime && endTime) {
+      description = `Pay the difference for room booking - ${date} ${startTime}-${endTime}`;
+    }
+    
+    // Create invoice with line item
+    let invoice: Stripe.Invoice;
+    try {
+      invoice = await stripe.invoices.create({
+        customer: customerId,
+        collection_method: 'charge_automatically',
+        auto_advance: false, // Don't auto-finalize since payment is already received
+        description,
+        metadata: {
+          payment_intent_id: paymentIntentId,
+          type: 'pay_the_difference',
+          ...metadata,
+        },
+      });
+    } catch (createError) {
+      // If invoice creation fails, log and return null
+      logger.error(
+        'Failed to create invoice',
+        createError instanceof Error ? createError : new Error(String(createError)),
+        { paymentIntentId, customerId }
+      );
+      return null;
+    }
+    
+    // Add line item for the payment amount
+    try {
+      await stripe.invoiceItems.create({
+        customer: customerId,
+        invoice: invoice.id,
+        amount: paymentIntent.amount_received,
+        currency: paymentIntent.currency || 'gbp',
+        description: description,
+      });
+    } catch (itemError) {
+      // If line item creation fails, try to delete the invoice to avoid orphaned state
+      try {
+        await stripe.invoices.del(invoice.id);
+      } catch (deleteError) {
+        logger.error(
+          'Failed to delete invoice after line item creation failure',
+          deleteError instanceof Error ? deleteError : new Error(String(deleteError)),
+          { invoiceId: invoice.id, paymentIntentId }
+        );
+      }
+      logger.error(
+        'Failed to create invoice line item',
+        itemError instanceof Error ? itemError : new Error(String(itemError)),
+        { paymentIntentId, customerId, invoiceId: invoice.id }
+      );
+      return null;
+    }
+    
+    // Finalize the invoice (since payment is already received)
+    let finalizedInvoice: Stripe.Invoice;
+    try {
+      finalizedInvoice = await stripe.invoices.finalizeInvoice(invoice.id, {
+        auto_advance: true,
+      });
+    } catch (finalizeError) {
+      logger.error(
+        'Failed to finalize invoice',
+        finalizeError instanceof Error ? finalizeError : new Error(String(finalizeError)),
+        { paymentIntentId, customerId, invoiceId: invoice.id }
+      );
+      return null;
+    }
+    
+    // Mark as paid since payment was already received
+    try {
+      await stripe.invoices.pay(finalizedInvoice.id, {
+        paid_out_of_band: true,
+      });
+    } catch (payError) {
+      // If marking as paid fails, the invoice is still finalized and can be marked paid later
+      // Log the error but don't fail - the invoice exists and can be retrieved
+      logger.error(
+        'Failed to mark invoice as paid (invoice was created and finalized)',
+        payError instanceof Error ? payError : new Error(String(payError)),
+        { paymentIntentId, customerId, invoiceId: finalizedInvoice.id }
+      );
+      // Return the invoice anyway since it was successfully created and finalized
+    }
+    
+    logger.info('Created invoice from PaymentIntent', {
+      paymentIntentId,
+      invoiceId: finalizedInvoice.id,
+      amount: paymentIntent.amount_received,
+    });
+    
+    return finalizedInvoice;
+  } catch (error) {
+    logger.error(
+      'Failed to create invoice from PaymentIntent',
+      error instanceof Error ? error : new Error(String(error)),
+      { paymentIntentId, customerId }
+    );
+    return null;
+  }
+}
+
+/**
  * List Stripe invoices for a customer. Used for practitioner Finance page (list + download from Stripe only).
+ * Includes both subscription invoices and pay-the-difference invoices.
+ * All invoices are created automatically via webhooks when payments succeed, so this function only fetches existing invoices.
  * @throws Error with message LIST_INVOICES_MISSING_CUSTOMER_ID when customerId is missing or empty
  */
 export async function listInvoicesForCustomer(customerId: string): Promise<InvoiceListItem[]> {
@@ -324,6 +527,9 @@ export async function listInvoicesForCustomer(customerId: string): Promise<Invoi
   const stripe = getStripe();
   const customer = customerId.trim();
   const results: InvoiceListItem[] = [];
+  
+  // Get all invoices (subscription + pay-the-difference)
+  // All invoices should already exist since they're created via webhook when payments succeed
   for await (const inv of stripe.invoices.list({ customer })) {
     results.push({
       id: inv.id,
@@ -335,6 +541,10 @@ export async function listInvoicesForCustomer(customerId: string): Promise<Invoi
       invoice_pdf: inv.invoice_pdf ?? null,
     });
   }
+  
+  // Sort by creation date (newest first)
+  results.sort((a, b) => b.created - a.created);
+  
   return results;
 }
 
