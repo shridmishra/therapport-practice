@@ -1,6 +1,6 @@
 import { db } from '../config/database';
 import { creditTransactions, bookings, freeBookingVouchers, rooms } from '../db/schema';
-import { eq, and, gte, lte, asc } from 'drizzle-orm';
+import { eq, and, gte, lte, asc, desc } from 'drizzle-orm';
 import { getMonthRange, formatTimeForDisplay } from '../utils/date.util';
 
 export interface BreakdownItem {
@@ -8,6 +8,7 @@ export interface BreakdownItem {
   amount: number;
   description: string;
   hours?: number; // For vouchers
+  isRefund?: boolean; // True if this is a refund item
 }
 
 export interface TransactionHistoryEntry {
@@ -18,6 +19,32 @@ export interface TransactionHistoryEntry {
   createdAt?: Date; // Internal field for sorting (not exposed to frontend)
   bookingId?: string; // Optional: link to group related entries
   breakdown?: BreakdownItem[]; // Optional: payment breakdown for bookings
+}
+
+/**
+ * Get the Stripe payment amount for a booking.
+ * Uses stored amount if available (most accurate), otherwise calculates it.
+ */
+function getStripePaymentAmount(
+  booking: {
+    stripePaymentAmount: string | null;
+    bookingType: string;
+  },
+  totalPrice: number,
+  creditUsed: number,
+  voucherValue: number
+): number {
+  if (booking.bookingType === 'free') {
+    return 0;
+  }
+  
+  if (booking.stripePaymentAmount != null) {
+    // Use the stored amount from Stripe (most accurate, matches Stripe dashboard)
+    return parseFloat(booking.stripePaymentAmount.toString());
+  } else {
+    // Fallback to calculation for older bookings that don't have stored amount
+    return Math.max(0, Math.round((totalPrice - creditUsed - voucherValue) * 100) / 100);
+  }
 }
 
 /**
@@ -51,6 +78,12 @@ export async function getTransactionHistory(
     .orderBy(asc(creditTransactions.createdAt));
 
   for (const grant of creditGrants) {
+    // Skip credit grants that are refunds for booking cancellations
+    // These are already shown in the booking breakdown
+    if (grant.sourceType === 'manual' && grant.description === 'Refund for booking cancellation') {
+      continue;
+    }
+    
     const amount = parseFloat(grant.amount.toString());
     let description = grant.description || 'Credit grant';
     
@@ -76,7 +109,7 @@ export async function getTransactionHistory(
     });
   }
 
-  // Get bookings for the month
+  // Get bookings for the month (including cancelled bookings)
   // Filter by createdAt to show transactions that happened in the selected month
   const bookingRows = await db
     .select({
@@ -89,8 +122,7 @@ export async function getTransactionHistory(
       and(
         eq(bookings.userId, userId),
         gte(bookings.createdAt, firstDayDate),
-        lte(bookings.createdAt, lastDayDate),
-        eq(bookings.status, 'confirmed')
+        lte(bookings.createdAt, lastDayDate)
       )
     )
     .orderBy(asc(bookings.createdAt));
@@ -127,17 +159,13 @@ export async function getTransactionHistory(
     }
     
     // Add Stripe payment breakdown if payment was made (skip for free bookings)
-    if (booking.bookingType !== 'free') {
-      // Clamp to zero to prevent negative values due to floating-point rounding differences
-      // This ensures breakdown always sums correctly to totalPrice
-      const paymentAmount = Math.max(0, Math.round((totalPrice - creditUsed - voucherValue) * 100) / 100);
-      if (paymentAmount > 0.01) {
-        breakdown.push({
-          type: 'stripe',
-          amount: paymentAmount,
-          description: 'Stripe payment',
-        });
-      }
+    const paymentAmount = getStripePaymentAmount(booking, totalPrice, creditUsed, voucherValue);
+    if (paymentAmount > 0.01) {
+      breakdown.push({
+        type: 'stripe',
+        amount: paymentAmount,
+        description: 'Stripe payment',
+      });
     }
     
     // Add voucher breakdown if vouchers were used (check monetary value for consistency with credits/stripe)
@@ -150,12 +178,49 @@ export async function getTransactionHistory(
       });
     }
     
+    // If booking is cancelled, add refund items to the breakdown
+    if (booking.status === 'cancelled') {
+      // Add credit refund entry if credits were used
+      if (creditUsed > 0.01) {
+        breakdown.push({
+          type: 'credits',
+          amount: creditUsed,
+          description: 'Credits refunded',
+          isRefund: true,
+        });
+      }
+      
+      // Add Stripe refund entry if payment was made
+      const refundPaymentAmount = getStripePaymentAmount(booking, totalPrice, creditUsed, voucherValue);
+      if (refundPaymentAmount > 0.01) {
+        breakdown.push({
+          type: 'stripe',
+          amount: refundPaymentAmount,
+          description: 'Stripe payment refunded',
+          isRefund: true,
+        });
+      }
+      
+      // Add voucher refund entry if vouchers were used
+      if (voucherHoursUsed > 0.01) {
+        breakdown.push({
+          type: 'voucher',
+          amount: 0, // Vouchers don't have monetary value in refund
+          description: 'Voucher hours refunded',
+          hours: voucherHoursUsed,
+          isRefund: true,
+        });
+      }
+    }
+
     // Create main booking entry with breakdown
     // Show total booking cost (positive amount for clarity, frontend will handle display)
     // For free bookings, set amount to 0 since they have no cost
+    // Add "(Cancelled)" suffix to description if booking is cancelled
+    const statusSuffix = booking.status === 'cancelled' ? ' (Cancelled)' : '';
     transactions.push({
       date: booking.createdAt.toISOString().split('T')[0], // Use creation date (when transaction happened)
-      description: `Booking ${room.name}, ${formattedBookingDate} ${startTime} to ${endTime}`,
+      description: `Booking ${room.name}, ${formattedBookingDate} ${startTime} to ${endTime}${statusSuffix}`,
       amount: booking.bookingType === 'free' ? 0 : totalPrice, // Free bookings show £0.00, others show total cost
       type: 'booking',
       bookingId: booking.id, // Link to group related entries

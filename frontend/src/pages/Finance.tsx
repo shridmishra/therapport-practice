@@ -31,6 +31,7 @@ interface BreakdownItem {
   amount: number;
   description: string;
   hours?: number;
+  isRefund?: boolean; // True if this is a refund item
 }
 
 interface TransactionHistoryEntry {
@@ -251,34 +252,38 @@ export const Finance: React.FC = () => {
                               </TableRow>
                               
                               {/* Sub-rows for breakdown */}
-                              {hasBreakdown && transaction.breakdown!.map((item, breakdownIdx) => (
-                                <TableRow key={`breakdown-${idx}-${breakdownIdx}`} className="bg-slate-50/50 dark:bg-slate-900/50">
-                                  <TableCell></TableCell>
-                                  <TableCell className="pl-8 text-sm text-slate-600 dark:text-slate-400">
-                                    {item.type === 'voucher' && item.hours ? (
-                                      `${item.description}: ${item.hours.toFixed(1)} hour${item.hours !== 1 ? 's' : ''}`
-                                    ) : (
-                                      `${item.description}`
-                                    )}
-                                  </TableCell>
-                                  <TableCell
-                                    className={`text-right text-sm ${
-                                      item.type === 'stripe'
-                                        ? 'text-green-600 dark:text-green-400'
-                                        : item.type === 'credits'
-                                        ? 'text-slate-600 dark:text-slate-400'
-                                        : 'text-slate-500 dark:text-slate-400'
-                                    }`}
-                                  >
-                                    {item.type === 'voucher' ? (
-                                      '—'
-                                    ) : (
-                                      // Show positive amounts for breakdown items (credits used, Stripe paid)
-                                      `£${item.amount.toFixed(2)}`
-                                    )}
-                                  </TableCell>
-                                </TableRow>
-                              ))}
+                              {hasBreakdown && transaction.breakdown!.map((item, breakdownIdx) => {
+                                return (
+                                  <TableRow key={`breakdown-${idx}-${breakdownIdx}`} className="bg-slate-50/50 dark:bg-slate-900/50">
+                                    <TableCell></TableCell>
+                                    <TableCell className="pl-8 text-sm text-slate-600 dark:text-slate-400">
+                                      {item.type === 'voucher' && item.hours ? (
+                                        `${item.description}: ${item.hours.toFixed(1)} hour${item.hours !== 1 ? 's' : ''}`
+                                      ) : (
+                                        item.description
+                                      )}
+                                    </TableCell>
+                                    <TableCell
+                                      className={`text-right text-sm ${
+                                        item.isRefund
+                                          ? 'text-green-600 dark:text-green-400'
+                                          : item.type === 'stripe'
+                                          ? 'text-green-600 dark:text-green-400'
+                                          : item.type === 'credits'
+                                          ? 'text-slate-600 dark:text-slate-400'
+                                          : 'text-slate-500 dark:text-slate-400'
+                                      }`}
+                                    >
+                                      {item.type === 'voucher' ? (
+                                        '—'
+                                      ) : (
+                                        // Show positive amounts for breakdown items (credits used, Stripe paid, or refunded)
+                                        `£${item.amount.toFixed(2)}`
+                                      )}
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
                             </React.Fragment>
                           );
                         })}

@@ -1,6 +1,6 @@
 import { db } from '../config/database';
 import { bookings, rooms, locations, memberships, users, freeBookingVouchers } from '../db/schema';
-import { eq, and, gte, gt, lte, asc, inArray, not } from 'drizzle-orm';
+import { eq, and, gte, gt, lte, asc, desc, inArray, not } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { todayUtcString, formatTimeForEmail } from '../utils/date.util';
 import { fromZonedTime } from 'date-fns-tz';
@@ -537,6 +537,14 @@ export type CreateBookingResult =
   | { id: string }
   | { paymentRequired: true; clientSecret: string; paymentIntentId: string; amountPence: number };
 
+export interface CreateBookingOptions {
+  paymentAmountMade?: number;
+  isAdminRequest?: boolean;
+  isAdmin?: boolean;
+  externalPaymentIntentId?: string;
+  stripePaymentAmount?: number;
+}
+
 /**
  * Create a booking using credits and/or vouchers. When insufficient credits and Stripe is configured,
  * returns paymentRequired with clientSecret for pay-the-difference (PR 9).
@@ -550,11 +558,16 @@ export async function createBooking(
   startTime: string,
   endTime: string,
   bookingType: 'permanent_recurring' | 'ad_hoc' | 'free',
-  paymentAmountMade?: number,
-  isAdminRequest?: boolean,
-  isAdmin?: boolean,
-  externalPaymentIntentId?: string
+  options?: CreateBookingOptions
 ): Promise<CreateBookingResult> {
+  const {
+    paymentAmountMade,
+    isAdminRequest,
+    isAdmin,
+    externalPaymentIntentId,
+    stripePaymentAmount,
+  } = options || {};
+
   // For free bookings created by admin (for themselves or others), skip membership check
   const skipMembershipCheck = bookingType === 'free' && (isAdmin === true || isAdminRequest === true);
   const validation = await validateBookingRequest(userId, roomId, date, startTime, endTime, skipMembershipCheck);
@@ -626,6 +639,7 @@ export async function createBooking(
           status: 'confirmed',
           bookingType,
           stripePaymentIntentId: (externalPaymentIntentId?.trim() || null),
+          stripePaymentAmount: stripePaymentAmount != null ? stripePaymentAmount.toFixed(2) : null, // Store stripePaymentAmount for consistency
         })
         .returning({ id: bookings.id });
       if (!created) throw new BookingValidationError('Failed to create booking');
@@ -781,7 +795,8 @@ export async function createBooking(
       .where(
         and(eq(freeBookingVouchers.userId, userId), gte(freeBookingVouchers.expiryDate, date))
       )
-      .orderBy(asc(freeBookingVouchers.expiryDate));
+      .orderBy(asc(freeBookingVouchers.expiryDate))
+      .for('update');
     const remainingVoucherHours = voucherRows.reduce((sum, v) => {
       const used = parseFloat(v.hoursUsed.toString());
       const allocated = parseFloat(v.hoursAllocated.toString());
@@ -817,6 +832,7 @@ export async function createBooking(
         status: 'confirmed',
         bookingType,
         stripePaymentIntentId: (externalPaymentIntentId?.trim() || null),
+        stripePaymentAmount: stripePaymentAmount != null ? stripePaymentAmount.toFixed(2) : null,
       })
       .returning({ id: bookings.id });
     if (!created) throw new BookingValidationError('Failed to create booking');
@@ -974,10 +990,25 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
     const voucherCoveredCents = totalPriceCents - creditAmountCents;
     const amountCoveredByVouchers = voucherCoveredCents / 100;
     
-    // Calculate Stripe payment amount: totalPrice - creditUsed - amountCoveredByVouchers
-    // This represents the amount paid via "pay the difference"
-    // Round to 2 decimal places to avoid floating-point drift
-    const stripePaymentAmount = Math.max(0, Math.round((totalPrice - creditUsed - amountCoveredByVouchers) * 100) / 100);
+    // Use stored Stripe payment amount if available (most accurate, matches Stripe dashboard and transaction history)
+    // Otherwise calculate it for older bookings that don't have stored amount
+    let stripePaymentAmount: number;
+    if (booking.stripePaymentAmount != null) {
+      // Use the stored amount from Stripe (most accurate, matches Stripe dashboard)
+      stripePaymentAmount = parseFloat(booking.stripePaymentAmount.toString());
+    } else {
+      // Guard: Free bookings never have Stripe payments
+      // This prevents incorrect credit grants when cancelling free bookings
+      if (booking.bookingType === 'free') {
+        stripePaymentAmount = 0;
+      } else {
+        // Fallback to calculation for older bookings that don't have stored amount
+        // Calculate Stripe payment amount: totalPrice - creditUsed - amountCoveredByVouchers
+        // This represents the amount paid via "pay the difference"
+        // Round to 2 decimal places to avoid floating-point drift
+        stripePaymentAmount = Math.max(0, Math.round((totalPrice - creditUsed - amountCoveredByVouchers) * 100) / 100);
+      }
+    }
     
     const cancellationReason = isAdmin ? 'Cancelled by admin' : 'Cancelled by user';
     await tx
@@ -1015,6 +1046,60 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
         undefined,
         'Refund for booking cancellation'
       );
+    }
+
+    // Refund free hours vouchers if they were used
+    // Refund in descending order (newest expiry first, LIFO) to reverse FIFO consumption
+    // Vouchers are consumed oldest-first (FIFO), so refund newest-first (LIFO) to correctly reverse
+    // This ensures we refund from the most recently used vouchers first
+    // Only refund vouchers if booking is not free (free bookings never use vouchers)
+    if (booking.bookingType !== 'free' && voucherHoursUsed >= 0.01) {
+      logger.info('Refunding voucher hours for booking cancellation', {
+        bookingId,
+        voucherHoursRefund: voucherHoursUsed,
+      });
+      
+      // Get vouchers with hoursUsed > 0, sorted by expiry date descending (newest first, LIFO)
+      // This reverses the FIFO consumption order used during booking creation
+      const voucherRows = await tx
+        .select()
+        .from(freeBookingVouchers)
+        .where(
+          and(
+            eq(freeBookingVouchers.userId, userId),
+            gt(freeBookingVouchers.hoursUsed, '0')
+          )
+        )
+        .orderBy(desc(freeBookingVouchers.expiryDate))
+        .for('update');
+      
+      let remainingToRefund = voucherHoursUsed;
+      for (const v of voucherRows) {
+        if (remainingToRefund <= 0) break;
+        const used = parseFloat(v.hoursUsed.toString());
+        const refund = Math.min(used, remainingToRefund);
+        const newUsed = used - refund;
+        
+        await tx
+          .update(freeBookingVouchers)
+          .set({
+            hoursUsed: newUsed.toFixed(2),
+            updatedAt: new Date(),
+          })
+          .where(eq(freeBookingVouchers.id, v.id));
+        
+        remainingToRefund -= refund;
+      }
+      
+      if (remainingToRefund > 0.01) {
+        // This should not happen in normal operation, but log a warning if we couldn't refund all hours
+        logger.warn('Could not fully refund voucher hours - some vouchers may have been deleted or modified', {
+          bookingId,
+          voucherHoursUsed,
+          remainingToRefund,
+          userId,
+        });
+      }
     }
 
     // Store paymentIntentId, stripePaymentAmount, and bookingDate for Stripe refund outside transaction
@@ -1135,7 +1220,9 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
   } else if (stripeRefundAmount >= 0.01 && !paymentIntentId) {
     // Fallback: if paymentIntentId is missing but payment was made, refund as credits
     // This handles edge cases where paymentIntentId wasn't stored (backward compatibility)
-    const fallbackSourceId = `refund:booking:${bookingId}`;
+    // Create deterministic UUID from bookingId for sourceId (DB source_id is uuid type)
+    // Use bookingId directly since it's already a UUID - this ensures idempotency per booking
+    const fallbackSourceId = bookingId;
     
     // Check if credits were already granted for this booking (idempotency guard)
     const alreadyGranted = await CreditTransactionService.hasCreditForSourceId(
@@ -1409,7 +1496,8 @@ export async function updateBooking(
           gte(freeBookingVouchers.expiryDate, newDate)
         )
       )
-      .orderBy(asc(freeBookingVouchers.expiryDate));
+      .orderBy(asc(freeBookingVouchers.expiryDate))
+      .for('update');
     const remainingVoucherHours = voucherRows.reduce((sum, v) => {
       const used = parseFloat(v.hoursUsed.toString());
       const allocated = parseFloat(v.hoursAllocated.toString());
@@ -1551,7 +1639,8 @@ export async function updateBooking(
             gt(freeBookingVouchers.hoursUsed, '0')
           )
         )
-        .orderBy(asc(freeBookingVouchers.expiryDate));
+        .orderBy(desc(freeBookingVouchers.expiryDate))
+        .for('update');
       let remainingToRelease = releaseHours;
       for (const v of rowsWithUsed) {
         if (remainingToRelease <= 0) break;
