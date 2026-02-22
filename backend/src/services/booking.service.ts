@@ -997,11 +997,17 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
       // Use the stored amount from Stripe (most accurate, matches Stripe dashboard)
       stripePaymentAmount = parseFloat(booking.stripePaymentAmount.toString());
     } else {
-      // Fallback to calculation for older bookings that don't have stored amount
-      // Calculate Stripe payment amount: totalPrice - creditUsed - amountCoveredByVouchers
-      // This represents the amount paid via "pay the difference"
-      // Round to 2 decimal places to avoid floating-point drift
-      stripePaymentAmount = Math.max(0, Math.round((totalPrice - creditUsed - amountCoveredByVouchers) * 100) / 100);
+      // Guard: Free bookings never have Stripe payments
+      // This prevents incorrect credit grants when cancelling free bookings
+      if (booking.bookingType === 'free') {
+        stripePaymentAmount = 0;
+      } else {
+        // Fallback to calculation for older bookings that don't have stored amount
+        // Calculate Stripe payment amount: totalPrice - creditUsed - amountCoveredByVouchers
+        // This represents the amount paid via "pay the difference"
+        // Round to 2 decimal places to avoid floating-point drift
+        stripePaymentAmount = Math.max(0, Math.round((totalPrice - creditUsed - amountCoveredByVouchers) * 100) / 100);
+      }
     }
     
     const cancellationReason = isAdmin ? 'Cancelled by admin' : 'Cancelled by user';
@@ -1214,7 +1220,9 @@ export async function cancelBooking(bookingId: string, userId: string, isAdmin: 
   } else if (stripeRefundAmount >= 0.01 && !paymentIntentId) {
     // Fallback: if paymentIntentId is missing but payment was made, refund as credits
     // This handles edge cases where paymentIntentId wasn't stored (backward compatibility)
-    const fallbackSourceId = `refund:booking:${bookingId}`;
+    // Create deterministic UUID from bookingId for sourceId (DB source_id is uuid type)
+    // Use bookingId directly since it's already a UUID - this ensures idempotency per booking
+    const fallbackSourceId = bookingId;
     
     // Check if credits were already granted for this booking (idempotency guard)
     const alreadyGranted = await CreditTransactionService.hasCreditForSourceId(
