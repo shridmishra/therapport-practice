@@ -537,6 +537,14 @@ export type CreateBookingResult =
   | { id: string }
   | { paymentRequired: true; clientSecret: string; paymentIntentId: string; amountPence: number };
 
+export interface CreateBookingOptions {
+  paymentAmountMade?: number;
+  isAdminRequest?: boolean;
+  isAdmin?: boolean;
+  externalPaymentIntentId?: string;
+  stripePaymentAmount?: number;
+}
+
 /**
  * Create a booking using credits and/or vouchers. When insufficient credits and Stripe is configured,
  * returns paymentRequired with clientSecret for pay-the-difference (PR 9).
@@ -550,12 +558,16 @@ export async function createBooking(
   startTime: string,
   endTime: string,
   bookingType: 'permanent_recurring' | 'ad_hoc' | 'free',
-  paymentAmountMade?: number,
-  isAdminRequest?: boolean,
-  isAdmin?: boolean,
-  externalPaymentIntentId?: string,
-  stripePaymentAmount?: number
+  options?: CreateBookingOptions
 ): Promise<CreateBookingResult> {
+  const {
+    paymentAmountMade,
+    isAdminRequest,
+    isAdmin,
+    externalPaymentIntentId,
+    stripePaymentAmount,
+  } = options || {};
+
   // For free bookings created by admin (for themselves or others), skip membership check
   const skipMembershipCheck = bookingType === 'free' && (isAdmin === true || isAdminRequest === true);
   const validation = await validateBookingRequest(userId, roomId, date, startTime, endTime, skipMembershipCheck);
@@ -627,6 +639,7 @@ export async function createBooking(
           status: 'confirmed',
           bookingType,
           stripePaymentIntentId: (externalPaymentIntentId?.trim() || null),
+          stripePaymentAmount: stripePaymentAmount != null ? stripePaymentAmount.toFixed(2) : null, // Store stripePaymentAmount for consistency
         })
         .returning({ id: bookings.id });
       if (!created) throw new BookingValidationError('Failed to create booking');

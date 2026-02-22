@@ -269,9 +269,10 @@ export class BookingController {
         startTime,
         endTime,
         type,
-        undefined,
-        isAdminRequest,
-        isAdmin
+        {
+          isAdminRequest,
+          isAdmin,
+        }
       );
       if ('paymentRequired' in result && result.paymentRequired) {
         res.status(402).json({
