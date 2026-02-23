@@ -6,6 +6,7 @@ import { logger } from '../utils/logger.util';
 import * as SubscriptionService from '../services/subscription.service';
 import * as BookingService from '../services/booking.service';
 import * as CreditTransactionService from '../services/credit-transaction.service';
+import * as StripePaymentService from '../services/stripe-payment.service';
 
 /** Deterministic UUID from Stripe payment intent id for use as credit sourceId (DB source_id is uuid). */
 function paymentIntentIdToSourceId(paymentIntentId: string): string {
@@ -50,6 +51,44 @@ async function grantPayDifferenceCredits(
     description,
     grantDate
   );
+}
+
+/**
+ * Create invoice from PaymentIntent asynchronously (fire-and-forget).
+ * This ensures invoices are created immediately when payment succeeds, matching monthly subscription pattern.
+ * Errors are logged but don't affect the webhook response.
+ */
+function createInvoiceForPaymentIntentAsync(
+  paymentIntentId: string,
+  customerId: string,
+  eventId: string,
+  userId: string,
+  bookingId?: string,
+  errorContext: 'new_booking' | 'update' = 'new_booking'
+): void {
+  StripePaymentService.createInvoiceFromPaymentIntent(paymentIntentId, customerId).catch((err) => {
+    const context: Record<string, string> = {
+      eventId,
+      paymentIntentId,
+      userId,
+      customerId,
+    };
+    if (bookingId) {
+      context.bookingId = bookingId;
+    }
+    
+    const errorMessage =
+      errorContext === 'update'
+        ? 'Failed to create invoice from PaymentIntent in webhook (update)'
+        : 'Failed to create invoice from PaymentIntent in webhook';
+    
+    logger.error(
+      errorMessage,
+      err instanceof Error ? err : new Error(String(err)),
+      context
+    );
+    // Don't throw - invoice creation failure shouldn't affect booking
+  });
 }
 
 /** In-memory map of processed event IDs with timestamps for TTL cleanup (PR 6 minimal). Replace with DB in production. */
@@ -293,6 +332,23 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
                 paymentAmountGBP: paymentAmountGBP,
                 paymentIntentId: paymentIntent.id,
               });
+              
+              // Create invoice from PaymentIntent (fire-and-forget, don't block webhook response)
+              // This ensures invoices are created immediately when payment succeeds, matching monthly subscription pattern
+              if (paymentIntent.customer) {
+                const customerId = typeof paymentIntent.customer === 'string'
+                  ? paymentIntent.customer
+                  : paymentIntent.customer.id;
+                
+                createInvoiceForPaymentIntentAsync(
+                  paymentIntent.id,
+                  customerId,
+                  event.id,
+                  userId,
+                  result.id,
+                  'new_booking'
+                );
+              }
             }
           }
         } else if (type === 'pay_the_difference_update' && userId && paymentIntent.metadata?.bookingId) {
@@ -358,6 +414,23 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
                   userId,
                   bookingId,
                 });
+                
+                // Create invoice from PaymentIntent (fire-and-forget, don't block webhook response)
+                // This ensures invoices are created immediately when payment succeeds, matching monthly subscription pattern
+                if (paymentIntent.customer) {
+                  const customerId = typeof paymentIntent.customer === 'string'
+                    ? paymentIntent.customer
+                    : paymentIntent.customer.id;
+                  
+                  createInvoiceForPaymentIntentAsync(
+                    paymentIntent.id,
+                    customerId,
+                    event.id,
+                    userId,
+                    bookingId,
+                    'update'
+                  );
+                }
               } catch (updateErr) {
                 if (creditsGrantedThisCall) {
                   try {
