@@ -27,6 +27,7 @@ import { calculateExpiryStatus } from '../utils/date.util';
 import { CreditService } from '../services/credit.service';
 import { VoucherService } from '../services/voucher.service';
 import { getRevenueForMonthGbp } from '../services/stripe-payment.service';
+import { KioskService } from '../services/kiosk.service';
 
 const updateMembershipSchema = z.object({
   type: z.enum(['permanent', 'ad_hoc']).nullable().optional(),
@@ -73,6 +74,142 @@ const referenceConfirmSchema = z.object({
 const DAILY_OPERATING_HOURS = 14;
 
 export class AdminController {
+  async getKioskCurrent(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res
+          .status(401)
+          .json({ success: false, error: 'Authentication required' });
+      }
+
+      const [overview, pimlico, kensington] = await Promise.all([
+        KioskService.getAdminOverview(),
+        KioskService.getPresenceByLocation('Pimlico'),
+        KioskService.getPresenceByLocation('Kensington'),
+      ]);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          rows: overview,
+          pimlico,
+          kensington,
+        },
+      });
+    } catch (error) {
+      logger.error('Failed to get admin kiosk current state', error, {
+        userId: req.user?.id,
+        method: req.method,
+        url: req.originalUrl,
+      });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+
+  async forceKioskSignIn(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res
+          .status(401)
+          .json({ success: false, error: 'Authentication required' });
+      }
+
+      const schema = z.object({
+        userId: z.string().uuid(),
+        location: z.enum(['Pimlico', 'Kensington']),
+      });
+
+      const { userId, location } = await schema.parseAsync(req.body);
+
+      await KioskService.signIn(userId, location, req.ip);
+
+      const [overview, pimlico, kensington] = await Promise.all([
+        KioskService.getAdminOverview(),
+        KioskService.getPresenceByLocation('Pimlico'),
+        KioskService.getPresenceByLocation('Kensington'),
+      ]);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          rows: overview,
+          pimlico,
+          kensington,
+        },
+      });
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return res.status(400).json({
+          success: false,
+          error: 'Validation failed',
+          details: error.flatten(),
+        });
+      }
+
+      const message =
+        error instanceof Error ? error.message : 'Internal server error';
+      if (message === 'Practitioner not found or not active') {
+        return res.status(404).json({ success: false, error: message });
+      }
+
+      logger.error('Failed to force kiosk sign-in', error, {
+        userId: req.user?.id,
+        method: req.method,
+        url: req.originalUrl,
+      });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+
+  async forceKioskSignOut(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res
+          .status(401)
+          .json({ success: false, error: 'Authentication required' });
+      }
+
+      const schema = z.object({
+        userId: z.string().uuid(),
+        location: z.enum(['Pimlico', 'Kensington']),
+      });
+
+      const { userId, location } = await schema.parseAsync(req.body);
+
+      await KioskService.signOut(userId, location, req.ip);
+
+      const [overview, pimlico, kensington] = await Promise.all([
+        KioskService.getAdminOverview(),
+        KioskService.getPresenceByLocation('Pimlico'),
+        KioskService.getPresenceByLocation('Kensington'),
+      ]);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          rows: overview,
+          pimlico,
+          kensington,
+        },
+      });
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return res.status(400).json({
+          success: false,
+          error: 'Validation failed',
+          details: error.flatten(),
+        });
+      }
+
+      logger.error('Failed to force kiosk sign-out', error, {
+        userId: req.user?.id,
+        method: req.method,
+        url: req.originalUrl,
+      });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+
   async getPractitioners(req: AuthRequest, res: Response) {
     try {
       if (!req.user) {

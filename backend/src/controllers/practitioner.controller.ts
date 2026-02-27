@@ -14,6 +14,7 @@ import { calculateExpiryStatus } from '../utils/date.util';
 import { z, ZodError } from 'zod';
 import { HeadObjectCommand } from '@aws-sdk/client-s3';
 import { r2Client, R2_BUCKET_NAME } from '../config/r2';
+import { KioskService } from '../services/kiosk.service';
 
 const futureDate = z.string().refine(
   (date) => {
@@ -513,6 +514,57 @@ export class PractitionerController {
           errorStack: errorStack,
         }
       );
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+
+  async getKioskStatus(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res
+          .status(401)
+          .json({ success: false, error: 'Authentication required' });
+      }
+
+      const status = await KioskService.getUserStatus(req.user.id);
+
+      res.status(200).json({
+        success: true,
+        data: status,
+      });
+    } catch (error) {
+      logger.error('Failed to get practitioner kiosk status', error, {
+        userId: req.user?.id,
+        method: req.method,
+        url: req.originalUrl,
+      });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+
+  async signOutFromKiosk(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res
+          .status(401)
+          .json({ success: false, error: 'Authentication required' });
+      }
+
+      const status = await KioskService.signOutCurrentForUser(
+        req.user.id,
+        req.ip
+      );
+
+      res.status(200).json({
+        success: true,
+        data: status,
+      });
+    } catch (error) {
+      logger.error('Failed to sign out from kiosk (practitioner)', error, {
+        userId: req.user?.id,
+        method: req.method,
+        url: req.originalUrl,
+      });
       res.status(500).json({ success: false, error: 'Internal server error' });
     }
   }

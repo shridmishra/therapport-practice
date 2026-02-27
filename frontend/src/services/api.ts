@@ -216,6 +216,40 @@ export interface FreeBookingHours {
   earliestExpiry: string | null;
 }
 
+export interface PractitionerKioskStatus {
+  isSignedIn: boolean;
+  location: 'Pimlico' | 'Kensington' | null;
+  signedInAt: string | null;
+}
+
+// Kiosk types
+export interface KioskLocation {
+  id: string;
+  name: 'Pimlico' | 'Kensington';
+  roomCount: number;
+}
+
+export interface KioskPractitioner {
+  id: string;
+  firstName: string;
+  lastName: string;
+  photoUrl?: string;
+  isSignedIn: boolean;
+  signedInAt: string | null;
+  isDummy: boolean;
+}
+
+export interface AdminKioskRow {
+  userId: string;
+  firstName: string;
+  lastName: string;
+  photoUrl?: string;
+  lastCheckInAt: string | null;
+  kensingtonStatus: 'in' | 'out';
+  pimlicoStatus: 'in' | 'out';
+  isDummy: boolean;
+}
+
 export interface InvoiceItem {
   id: string;
   number: string | null;
@@ -366,6 +400,18 @@ export const practitionerApi = {
     });
   },
 
+  getKioskStatus: (signal?: AbortSignal) => {
+    return api.get<
+      ApiResponse<PractitionerKioskStatus>
+    >('/practitioner/kiosk/status', { signal });
+  },
+
+  kioskSignOut: () => {
+    return api.post<
+      ApiResponse<PractitionerKioskStatus>
+    >('/practitioner/kiosk/sign-out', {});
+  },
+
   // Subscriptions (PR 14)
   getSubscriptionStatus: (signal?: AbortSignal) => {
     return api.get<{
@@ -433,8 +479,163 @@ export const practitionerApi = {
   },
 };
 
+// Public kiosk API methods (no auth required)
+export const kioskApi = {
+  getLocations: () => {
+    return api.get<{
+      success: boolean;
+      data: KioskLocation[];
+    }>('/kiosk/locations');
+  },
+
+  getPractitioners: (
+    location: 'Pimlico' | 'Kensington',
+    signal?: AbortSignal
+  ) => {
+    const locationParam = location.toLowerCase();
+    return api.get<{
+      success: boolean;
+      data: {
+        location: KioskLocation;
+        practitioners: KioskPractitioner[];
+      };
+    }>(`/kiosk/${locationParam}/practitioners`, { signal });
+  },
+
+  signIn: (location: 'Pimlico' | 'Kensington', userId: string) => {
+    const locationParam = location.toLowerCase();
+    return api.post<{
+      success: boolean;
+      data: {
+        location: KioskLocation;
+        practitioners: KioskPractitioner[];
+      };
+    }>(`/kiosk/${locationParam}/sign-in`, { userId });
+  },
+
+  signOut: (location: 'Pimlico' | 'Kensington', userId: string) => {
+    const locationParam = location.toLowerCase();
+    return api.post<{
+      success: boolean;
+      data: {
+        location: KioskLocation;
+        practitioners: KioskPractitioner[];
+      };
+    }>(`/kiosk/${locationParam}/sign-out`, { userId });
+  },
+};
+
 // Admin API methods
 export const adminApi = {
+  getKioskCurrent: () => {
+    return api.get<
+      ApiResponse<{
+        rows: AdminKioskRow[];
+        pimlico: Array<{
+          userId: string;
+          firstName: string;
+          lastName: string;
+          photoUrl?: string;
+          signedInAt: string | null;
+          isDummy: boolean;
+        }>;
+        kensington: Array<{
+          userId: string;
+          firstName: string;
+          lastName: string;
+          photoUrl?: string;
+          signedInAt: string | null;
+          isDummy: boolean;
+        }>;
+      }>
+    >('/admin/kiosk/current');
+  },
+
+  forceKioskSignIn: (payload: { userId: string; location: 'Pimlico' | 'Kensington' }) => {
+    return api.post<
+      ApiResponse<{
+        rows: AdminKioskRow[];
+        pimlico: Array<{
+          userId: string;
+          firstName: string;
+          lastName: string;
+          photoUrl?: string;
+          signedInAt: string | null;
+          isDummy: boolean;
+        }>;
+        kensington: Array<{
+          userId: string;
+          firstName: string;
+          lastName: string;
+          photoUrl?: string;
+          signedInAt: string | null;
+          isDummy: boolean;
+        }>;
+      }>
+    >('/admin/kiosk/force-sign-in', payload);
+  },
+
+  forceKioskSignOut: (payload: { userId: string; location: 'Pimlico' | 'Kensington' }) => {
+    return api.post<
+      ApiResponse<{
+        rows: AdminKioskRow[];
+        pimlico: Array<{
+          userId: string;
+          firstName: string;
+          lastName: string;
+          photoUrl?: string;
+          signedInAt: string | null;
+          isDummy: boolean;
+        }>;
+        kensington: Array<{
+          userId: string;
+          firstName: string;
+          lastName: string;
+          photoUrl?: string;
+          signedInAt: string | null;
+          isDummy: boolean;
+        }>;
+      }>
+    >('/admin/kiosk/force-sign-out', payload);
+  },
+
+  getKioskLogs: (params: {
+    location?: 'Pimlico' | 'Kensington';
+    userId?: string;
+    search?: string;
+    from?: string;
+    to?: string;
+    page?: number;
+    pageSize?: number;
+  }) => {
+    const query: Record<string, string | number> = {};
+    if (params.location) query.location = params.location;
+    if (params.userId) query.userId = params.userId;
+    if (params.search) query.search = params.search;
+    if (params.from) query.from = params.from;
+    if (params.to) query.to = params.to;
+    if (params.page) query.page = params.page;
+    if (params.pageSize) query.pageSize = params.pageSize;
+
+    return api.get<
+      ApiResponse<{
+        data: Array<{
+          id: string;
+          name: string;
+          location: string;
+          time: string;
+          status: 'In' | 'Out';
+        }>;
+        pagination: {
+          page: number;
+          pageSize: number;
+          total: number;
+          totalPages: number;
+        };
+      }>
+    >('/admin/kiosk/logs', { params: query });
+  },
+
   getAdminStats: (params?: { fromDate?: string; toDate?: string }) => {
     return api.get<
       ApiResponse<{

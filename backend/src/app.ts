@@ -10,6 +10,7 @@ import practitionerRoutes from './routes/practitioner.routes';
 import adminRoutes from './routes/admin.routes';
 import cronRoutes from './routes/cron.routes';
 import stripeWebhookRoutes from './routes/stripe-webhook.routes';
+import kioskRoutes from './routes/kiosk.routes';
 import { errorHandler } from './middleware/error.middleware';
 import cron from 'node-cron';
 import { cronController } from './controllers/cron.controller';
@@ -32,16 +33,23 @@ const PORT = process.env.PORT || 3000;
 })();
 
 // Middleware
-// CORS - Allow all origins for now (TODO: restrict in production)
-// Note: When using origin: '*', credentials must be false
-app.use(
-  cors({
-    origin: '*', // Allow all origins
-    credentials: false, // Must be false when origin is '*'
-  })
-);
-// Alternative: Use default CORS (allows all origins, no credentials)
-// app.use(cors());
+// CORS - Restrict in production, open in development
+if (process.env.NODE_ENV === 'production') {
+  const allowedOrigin = process.env.FRONTEND_URL;
+  app.use(
+    cors({
+      origin: allowedOrigin ? [allowedOrigin] : '*',
+      credentials: false,
+    })
+  );
+} else {
+  app.use(
+    cors({
+      origin: '*',
+      credentials: false,
+    })
+  );
+}
 
 // HTTP request logger
 app.use(
@@ -91,6 +99,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/practitioner', practitionerRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/cron', cronRoutes);
+app.use('/api/kiosk', kioskRoutes);
 
 // Error handling
 app.use(errorHandler);

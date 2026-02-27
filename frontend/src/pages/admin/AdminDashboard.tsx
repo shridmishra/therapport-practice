@@ -13,7 +13,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Icon } from '@/components/ui/Icon';
-import { adminApi } from '@/services/api';
+import { adminApi, type AdminKioskRow } from '@/services/api';
 import { useNavigate } from 'react-router-dom';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
@@ -62,6 +62,16 @@ export const AdminDashboard: React.FC = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
+  const [kioskRows, setKioskRows] = useState<AdminKioskRow[]>([]);
+  const [pimlicoCurrent, setPimlicoCurrent] = useState<
+    Array<{ userId: string; firstName: string; lastName: string; photoUrl?: string }>
+  >([]);
+  const [kensingtonCurrent, setKensingtonCurrent] = useState<
+    Array<{ userId: string; firstName: string; lastName: string; photoUrl?: string; isDummy: boolean }>
+  >([]);
+  const [kioskLoading, setKioskLoading] = useState(false);
+  const [kioskError, setKioskError] = useState<string | null>(null);
+
   const fetchStats = useCallback(async () => {
     setLoading(true);
     setStatsError(null);
@@ -97,6 +107,40 @@ export const AdminDashboard: React.FC = () => {
   }, [occupancyFromDate, occupancyToDate]);
 
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  const fetchKioskCurrent = useCallback(async () => {
+    setKioskLoading(true);
+    setKioskError(null);
+    try {
+      const response = await adminApi.getKioskCurrent();
+      if (response.data.success && response.data.data) {
+        const { rows, pimlico, kensington } = response.data.data;
+        setKioskRows(rows);
+        setPimlicoCurrent(
+          pimlico.map((p) => ({
+            userId: p.userId,
+            firstName: p.firstName,
+            lastName: p.lastName,
+            photoUrl: p.photoUrl,
+          }))
+        );
+        setKensingtonCurrent(
+          kensington.map((p) => ({
+            userId: p.userId,
+            firstName: p.firstName,
+            lastName: p.lastName,
+            photoUrl: p.photoUrl,
+            isDummy: p.isDummy,
+          }))
+        );
+      }
+    } catch (error) {
+      console.error('Failed to fetch kiosk current state', error);
+      setKioskError('Failed to load kiosk presence. Please try again.');
+    } finally {
+      setKioskLoading(false);
+    }
+  }, []);
 
   const fetchMissingInfo = useCallback(async () => {
     // Cancel previous request if exists
@@ -135,8 +179,9 @@ export const AdminDashboard: React.FC = () => {
   useEffect(() => {
     if (user?.role === 'admin') {
       fetchStats();
+      fetchKioskCurrent();
     }
-  }, [user?.role, fetchStats]);
+  }, [user?.role, fetchStats, fetchKioskCurrent]);
 
   // Effect for missing info
   useEffect(() => {
@@ -301,6 +346,83 @@ export const AdminDashboard: React.FC = () => {
                 <Icon name="people" size={18} className="mr-2" />
                 Manage Members
               </Button>
+            </CardContent>
+          </Card>
+
+          {/* Who is in now – Pimlico & Kensington */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-medium flex items-center justify-between">
+                <span>Who is in now</span>
+                <Button variant="outline" size="sm" onClick={fetchKioskCurrent} disabled={kioskLoading}>
+                  <Icon name="refresh" className="h-4 w-4 mr-1" />
+                  Refresh
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {kioskError ? (
+                <div className="text-sm text-red-600 dark:text-red-400">{kioskError}</div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Pimlico box */}
+                  <div>
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+                      Pimlico
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {kioskLoading ? (
+                        <Skeleton className="h-14 w-full" />
+                      ) : pimlicoCurrent.length === 0 ? (
+                        <p className="text-xs text-slate-500">No one currently signed in.</p>
+                      ) : (
+                        pimlicoCurrent.map((p) => (
+                          <button
+                            key={p.userId}
+                            type="button"
+                            className="flex items-center gap-2 px-2 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-xs"
+                          >
+                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 dark:bg-slate-700 text-[11px] font-semibold">
+                              {(p.firstName.charAt(0) + p.lastName.charAt(0)).toUpperCase()}
+                            </span>
+                            <span>{p.firstName} {p.lastName}</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Kensington box */}
+                  <div>
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+                      Kensington
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {kioskLoading ? (
+                        <Skeleton className="h-14 w-full" />
+                      ) : kensingtonCurrent.length === 0 ? (
+                        <p className="text-xs text-slate-500">No one currently signed in.</p>
+                      ) : (
+                        kensingtonCurrent.map((p) => (
+                          <button
+                            key={p.userId}
+                            type="button"
+                            className="flex items-center gap-2 px-2 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-xs"
+                            title={p.isDummy ? 'Dummy always-in user' : undefined}
+                          >
+                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 dark:bg-slate-700 text-[11px] font-semibold">
+                              {(p.firstName.charAt(0) + p.lastName.charAt(0)).toUpperCase()}
+                            </span>
+                            <span>
+                              {p.firstName} {p.lastName}
+                            </span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

@@ -1,11 +1,40 @@
 import { Router } from 'express';
 import { adminController } from '../controllers/admin.controller';
+import { kioskAdminController } from '../controllers/kiosk-admin.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/rbac.middleware';
 
 const router = Router();
 
 // All admin routes require authentication and admin role
+router.get(
+  '/kiosk/current',
+  authenticate,
+  requireRole('admin'),
+  adminController.getKioskCurrent.bind(adminController)
+);
+
+router.post(
+  '/kiosk/force-sign-in',
+  authenticate,
+  requireRole('admin'),
+  adminController.forceKioskSignIn.bind(adminController)
+);
+
+router.post(
+  '/kiosk/force-sign-out',
+  authenticate,
+  requireRole('admin'),
+  adminController.forceKioskSignOut.bind(adminController)
+);
+
+router.get(
+  '/kiosk/logs',
+  authenticate,
+  requireRole('admin'),
+  kioskAdminController.getLogs.bind(kioskAdminController)
+);
+
 router.get(
   '/stats',
   authenticate,

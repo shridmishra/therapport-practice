@@ -17,6 +17,8 @@ import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { PractitionerManagement } from './pages/admin/PractitionerManagement';
 import { AdminCalendar } from './pages/admin/AdminCalendar';
 import { AdminProfile } from './pages/admin/AdminProfile';
+import { AdminKioskLogs } from './pages/admin/AdminKioskLogs';
+import { KioskPage } from './pages/kiosk/KioskPage';
 import './styles/globals.css';
 
 function App() {
@@ -103,6 +105,16 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/admin/kiosk-logs"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <AdminKioskLogs />
+                </ProtectedRoute>
+              }
+            />
+            <Route path="/kiosk/pimlico" element={<KioskPage location="Pimlico" />} />
+            <Route path="/kiosk/kensington" element={<KioskPage location="Kensington" />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

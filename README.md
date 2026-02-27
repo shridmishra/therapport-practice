@@ -102,15 +102,33 @@ npm run dev
 ## Deployment
 
 ### Backend on Vercel
-- Set up environment variables in Vercel dashboard
-- Deploy from the `backend/` directory
-- Configure build command: `npm run build`
+- Deploy from the `backend/` directory using the included `vercel.json`.
+- Set environment variables in the Vercel dashboard (non‑exhaustive):
+  - `DATABASE_URL`
+  - `JWT_SECRET`
+  - `JWT_REFRESH_SECRET`
+  - `EMAIL_USER`, `EMAIL_PASSWORD`, `EMAIL_FROM`
+  - `FRONTEND_URL` – the HTTPS URL of the deployed frontend (used for CORS).
+  - `DUMMY_KENSINGTON_USER_ID` – the user id of the dummy always‑signed‑in Kensington practitioner.
+- Build command: `npm run build`
 - Start command: `npm start`
 
 ### Frontend on Vercel
-- Set up environment variables (VITE_API_URL)
-- Deploy from the `frontend/` directory
-- Vercel will auto-detect Vite configuration
+- Deploy from the `frontend/` directory.
+- Set environment variables (at minimum):
+  - `VITE_API_URL` – the HTTPS URL of the backend API, e.g. `https://app.therapport.co.uk/api`.
+- Vercel will auto‑detect the Vite configuration.
+
+### Kiosk and Admin Presence
+
+- **Kiosk URLs** (tablet‑friendly, no login required):
+  - Pimlico kiosk: `/kiosk/pimlico`
+  - Kensington kiosk: `/kiosk/kensington`
+- **Admin “Who is in now”**:
+  - Admin dashboard shows two boxes listing practitioners currently “In” at Pimlico and Kensington.
+- **Kiosk Logs**:
+  - Admin navigation includes “Kiosk Logs” with Kensington/Pimlico In‑Out tables backed by the `kiosk_logs` table.
+- See `docs/kiosk-operations.md` for operational details.
 
 ## License
 

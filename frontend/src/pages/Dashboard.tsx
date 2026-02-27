@@ -74,6 +74,13 @@ export const Dashboard: React.FC = () => {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [kioskStatus, setKioskStatus] = useState<{
+    isSignedIn: boolean;
+    location: 'Pimlico' | 'Kensington' | null;
+    signedInAt: string | null;
+  } | null>(null);
+  const [kioskLoading, setKioskLoading] = useState(false);
+  const [kioskError, setKioskError] = useState<string | null>(null);
 
   const getInitials = (firstName?: string, lastName?: string) => {
     const first = firstName?.charAt(0) || '';
@@ -326,6 +333,37 @@ export const Dashboard: React.FC = () => {
       cancelled = true;
     };
   }, [user, refreshUser]);
+
+  // Fetch kiosk status for the practitioner
+  useEffect(() => {
+    if (!user) return;
+    const controller = new AbortController();
+    const { signal } = controller;
+
+    const loadStatus = async () => {
+      try {
+        setKioskLoading(true);
+        setKioskError(null);
+        const res = await practitionerApi.getKioskStatus(signal);
+        if (!signal.aborted && res.data.success && res.data.data) {
+          setKioskStatus(res.data.data);
+        }
+      } catch {
+        if (!signal.aborted) {
+          setKioskError('Unable to load kiosk status');
+          setKioskStatus(null);
+        }
+      } finally {
+        if (!signal.aborted) {
+          setKioskLoading(false);
+        }
+      }
+    };
+
+    loadStatus();
+
+    return () => controller.abort();
+  }, [user?.id]);
 
   const formatMonthYear = (monthYear: string): string => {
     // Validate input: non-empty string matching YYYY-MM or YYYY-MM-DD format
@@ -671,27 +709,71 @@ export const Dashboard: React.FC = () => {
           <Card className="col-span-1 md:col-span-2 lg:col-span-1">
             <CardContent className="p-5 flex flex-row items-center gap-4">
               <div className="relative">
-                <Avatar className="h-28 w-28 border-2 border-green-500">
-                  <AvatarImage src="" alt="Kiosk check-in photo" />
+                <Avatar
+                  className={`h-28 w-28 border-2 ${
+                    kioskStatus?.isSignedIn ? 'border-green-500' : 'border-slate-300'
+                  }`}
+                >
+                  <AvatarImage src={user?.photoUrl} alt="Kiosk check-in photo" />
                   <AvatarFallback className="bg-primary/10 text-primary text-2xl font-bold">
                     {getInitials(user?.firstName, user?.lastName)}
                   </AvatarFallback>
                 </Avatar>
-                <div className="absolute -bottom-2 -right-2 bg-green-500 text-white p-1 rounded-full border-2 border-white dark:border-surface-dark">
-                  <Icon name="check" size={16} />
-                </div>
+                {kioskStatus?.isSignedIn && (
+                  <div className="absolute -bottom-2 -right-2 bg-green-500 text-white p-1 rounded-full border-2 border-white dark:border-surface-dark">
+                    <Icon name="check" size={16} />
+                  </div>
+                )}
               </div>
               <div className="flex flex-col flex-1 gap-1">
                 <div className="flex justify-between items-start">
                   <div>
-                    <p className="text-slate-900 dark:text-white font-bold text-lg">Signed In</p>
-                    <p className="text-slate-500 dark:text-slate-400 text-sm">Pimlico Tablet</p>
-                    <p className="text-slate-400 dark:text-slate-500 text-xs mt-1">
-                      Check-in: 09:00 AM
+                    <p className="text-slate-900 dark:text-white font-bold text-lg">
+                      {kioskLoading
+                        ? 'Loading…'
+                        : kioskStatus?.isSignedIn
+                        ? 'Signed In'
+                        : 'Signed Out'}
                     </p>
+                    <p className="text-slate-500 dark:text-slate-400 text-sm">
+                      {kioskStatus?.isSignedIn && kioskStatus.location
+                        ? `${kioskStatus.location} kiosk`
+                        : 'Not currently visible on kiosk'}
+                    </p>
+                    {kioskStatus?.isSignedIn && kioskStatus.signedInAt && (
+                      <p className="text-slate-400 dark:text-slate-500 text-xs mt-1">
+                        Check-in:{' '}
+                        {new Date(kioskStatus.signedInAt).toLocaleTimeString('en-GB', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </p>
+                    )}
+                    {kioskError && (
+                      <p className="text-xs text-red-600 dark:text-red-400 mt-1">{kioskError}</p>
+                    )}
                   </div>
                 </div>
-                <Button variant="destructive" size="sm" className="mt-2 w-full">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="mt-2 w-full"
+                  disabled={kioskLoading || !kioskStatus?.isSignedIn}
+                  onClick={async () => {
+                    try {
+                      setKioskLoading(true);
+                      setKioskError(null);
+                      const res = await practitionerApi.kioskSignOut();
+                      if (res.data.success && res.data.data) {
+                        setKioskStatus(res.data.data);
+                      }
+                    } catch {
+                      setKioskError('Sign-out failed. Please try again.');
+                    } finally {
+                      setKioskLoading(false);
+                    }
+                  }}
+                >
                   <Icon name="logout" size={18} className="mr-2" />
                   Sign Out
                 </Button>

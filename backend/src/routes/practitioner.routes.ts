@@ -13,6 +13,16 @@ router.get(
   authenticate,
   practitionerController.getDashboard.bind(practitionerController)
 );
+router.get(
+  '/kiosk/status',
+  authenticate,
+  practitionerController.getKioskStatus.bind(practitionerController)
+);
+router.post(
+  '/kiosk/sign-out',
+  authenticate,
+  practitionerController.signOutFromKiosk.bind(practitionerController)
+);
 // Booking routes (merged to avoid dual mount at same path)
 router.get('/bookings', authenticate, bookingController.getBookings.bind(bookingController));
 router.get(
