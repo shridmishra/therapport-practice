@@ -166,20 +166,21 @@ export class KioskService {
 
     const result: KioskPractitioner[] = practitioners.map((p) => {
       const latest = latestByUser.get(p.id);
-      const isDummy =
+      const isDummy = Boolean(
         locationName === 'Kensington' &&
-        DUMMY_KENSINGTON_USER_ID &&
-        p.id === DUMMY_KENSINGTON_USER_ID;
+          DUMMY_KENSINGTON_USER_ID &&
+          p.id === DUMMY_KENSINGTON_USER_ID
+      );
 
       const isSignedIn =
-        (latest?.action === 'sign_in' ?? false) || (isDummy && !latest);
+        (latest?.action === 'sign_in') || (isDummy && !latest);
 
       return {
         id: p.id,
         firstName: p.firstName,
         lastName: p.lastName,
         photoUrl: p.photoUrl || undefined,
-        isSignedIn,
+        isSignedIn: Boolean(isSignedIn),
         signedInAt: latest?.actionTime ?? null,
         isDummy,
       };
@@ -307,16 +308,20 @@ export class KioskService {
     return practitioners.map((p) => {
       const pimlicoEntry = pimlicoLatest.get(p.id);
       const kensingtonEntry = kensingtonLatest.get(p.id);
-      const isDummy =
-        DUMMY_KENSINGTON_USER_ID && p.id === DUMMY_KENSINGTON_USER_ID;
+      const isDummy = Boolean(
+        DUMMY_KENSINGTON_USER_ID && p.id === DUMMY_KENSINGTON_USER_ID
+      );
 
       const pimlicoStatus: 'in' | 'out' =
         pimlicoEntry?.action === 'sign_in' ? 'in' : 'out';
 
       // Dummy Kensington user is always effectively "in"
       const kensingtonStatus: 'in' | 'out' =
-        (kensingtonEntry?.action === 'sign_in' ? 'in' : 'out') ||
-        (isDummy && !kensingtonEntry ? 'in' : 'out');
+        kensingtonEntry?.action === 'sign_in'
+          ? 'in'
+          : isDummy && !kensingtonEntry
+            ? 'in'
+            : 'out';
 
       const lastCheckInTimes: Date[] = [];
       if (pimlicoEntry?.action === 'sign_in') lastCheckInTimes.push(pimlicoEntry.actionTime);
@@ -337,7 +342,7 @@ export class KioskService {
         lastCheckInAt,
         kensingtonStatus,
         pimlicoStatus,
-        isDummy,
+        isDummy: Boolean(isDummy),
       };
     });
   }

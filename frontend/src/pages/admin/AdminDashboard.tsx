@@ -13,7 +13,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Icon } from '@/components/ui/Icon';
-import { adminApi, type AdminKioskRow } from '@/services/api';
+import { adminApi } from '@/services/api';
 import { useNavigate } from 'react-router-dom';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
@@ -62,7 +62,6 @@ export const AdminDashboard: React.FC = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
-  const [kioskRows, setKioskRows] = useState<AdminKioskRow[]>([]);
   const [pimlicoCurrent, setPimlicoCurrent] = useState<
     Array<{ userId: string; firstName: string; lastName: string; photoUrl?: string }>
   >([]);
@@ -114,8 +113,7 @@ export const AdminDashboard: React.FC = () => {
     try {
       const response = await adminApi.getKioskCurrent();
       if (response.data.success && response.data.data) {
-        const { rows, pimlico, kensington } = response.data.data;
-        setKioskRows(rows);
+        const { pimlico, kensington } = response.data.data;
         setPimlicoCurrent(
           pimlico.map((p) => ({
             userId: p.userId,

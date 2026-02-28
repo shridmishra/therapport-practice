@@ -26,7 +26,7 @@ export class KioskAdminController {
       );
       const offset = (page - 1) * pageSize;
 
-      let locationFilter: string | null = null;
+      let locationFilter: 'Pimlico' | 'Kensington' | null = null;
       if (location) {
         const normalized = location.toLowerCase();
         if (normalized === 'pimlico') locationFilter = 'Pimlico';
