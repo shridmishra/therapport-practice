@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2560 2121" width="2560" height="2121">
+  <defs>
+    <linearGradient id="circleGrad" x1="0.15" y1="0.85" x2="0.85" y2="0.15" gradientUnits="objectBoundingBox">
+      <stop offset="0" stop-color="#dfc2b1"/>
+      <stop offset="1" stop-color="#ac887f"/>
+    </linearGradient>
+  </defs>
+  <!-- Muted grey base -->
+  <rect width="2560" height="2121" fill="#d8d8d8"/>
+  <!-- Large gradient circle - top right -->
+  <circle cx="2240" cy="590" r="520" fill="url(#circleGrad)" opacity="0.85"/>
+  <!-- Large gradient circle - bottom left -->
+  <circle cx="520" cy="1620" r="520" fill="url(#circleGrad)" opacity="0.85"/>
+  <!-- Large gradient circle - bottom right (behind Sign In/Out) -->
+  <circle cx="2100" cy="1800" r="480" fill="url(#circleGrad)" opacity="0.75"/>
+</svg>
