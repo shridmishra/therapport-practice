@@ -6,14 +6,16 @@ import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
+import { Icon } from '@/components/ui/Icon';
 import { adminApi } from '@/services/api';
 
 type LocationFilter = 'Pimlico' | 'Kensington';
+type SortBy = 'name' | 'time';
+type SortOrder = 'asc' | 'desc';
 
 interface KioskLogRow {
   id: string;
   name: string;
-  location: string;
   time: string;
   status: 'In' | 'Out';
 }
@@ -27,6 +29,8 @@ export const AdminKioskLogs: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [sortBy, setSortBy] = useState<SortBy>('time');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
   const fetchLogs = async (loc: LocationFilter, pageNumber: number) => {
     setLoading(true);
@@ -37,6 +41,8 @@ export const AdminKioskLogs: React.FC = () => {
         page: pageNumber,
         pageSize: 50,
         search: search || undefined,
+        sortBy,
+        sortOrder,
       });
       if (res.data.success && res.data.data) {
         setLogs(res.data.data.data);
@@ -56,7 +62,21 @@ export const AdminKioskLogs: React.FC = () => {
       fetchLogs(activeTab, 1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.role, activeTab]);
+  }, [user?.role, activeTab, sortBy, sortOrder]);
+
+  const handleSort = (column: SortBy) => {
+    if (sortBy === column) {
+      setSortOrder((o) => (o === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(column);
+      setSortOrder(column === 'time' ? 'desc' : 'asc');
+    }
+    setPage(1);
+  };
+
+  const refetchWithPage = (pageNumber: number) => {
+    fetchLogs(activeTab, pageNumber);
+  };
 
   if (user?.role !== 'admin') {
     return <AccessDenied />;
@@ -123,22 +143,49 @@ export const AdminKioskLogs: React.FC = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Location</TableHead>
-                    <TableHead>Time</TableHead>
+                    <TableHead>
+                      <button
+                        type="button"
+                        onClick={() => handleSort('name')}
+                        className="flex items-center gap-1 font-medium hover:underline focus:outline-none focus:ring-2 focus:ring-primary rounded"
+                      >
+                        Name
+                        {sortBy === 'name' && (
+                          <Icon
+                            name={sortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'}
+                            size={14}
+                          />
+                        )}
+                      </button>
+                    </TableHead>
+                    <TableHead>
+                      <button
+                        type="button"
+                        onClick={() => handleSort('time')}
+                        className="flex items-center gap-1 font-medium hover:underline focus:outline-none focus:ring-2 focus:ring-primary rounded"
+                      >
+                        Time
+                        {sortBy === 'time' && (
+                          <Icon
+                            name={sortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward'}
+                            size={14}
+                          />
+                        )}
+                      </button>
+                    </TableHead>
                     <TableHead>Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="py-8 text-center text-slate-500">
+                      <TableCell colSpan={3} className="py-8 text-center text-slate-500">
                         Loading…
                       </TableCell>
                     </TableRow>
                   ) : logs.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="py-8 text-center text-slate-500">
+                      <TableCell colSpan={3} className="py-8 text-center text-slate-500">
                         No logs found.
                       </TableCell>
                     </TableRow>
@@ -146,7 +193,6 @@ export const AdminKioskLogs: React.FC = () => {
                     logs.map((log) => (
                       <TableRow key={log.id}>
                         <TableCell>{log.name}</TableCell>
-                        <TableCell>{log.location}</TableCell>
                         <TableCell>
                           {new Date(log.time).toLocaleString('en-GB', {
                             day: '2-digit',
@@ -169,10 +215,7 @@ export const AdminKioskLogs: React.FC = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    const newPage = Math.max(1, page - 1);
-                    fetchLogs(activeTab, newPage);
-                  }}
+                  onClick={() => refetchWithPage(Math.max(1, page - 1))}
                   disabled={page === 1 || loading}
                 >
                   Previous
@@ -183,10 +226,7 @@ export const AdminKioskLogs: React.FC = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    const newPage = Math.min(totalPages, page + 1);
-                    fetchLogs(activeTab, newPage);
-                  }}
+                  onClick={() => refetchWithPage(Math.min(totalPages, page + 1))}
                   disabled={page === totalPages || loading}
                 >
                   Next
@@ -199,4 +239,3 @@ export const AdminKioskLogs: React.FC = () => {
     </MainLayout>
   );
 };
-

@@ -13,6 +13,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Icon } from '@/components/ui/Icon';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { adminApi } from '@/services/api';
 import { useNavigate } from 'react-router-dom';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -353,7 +354,7 @@ export const AdminDashboard: React.FC = () => {
               <CardTitle className="text-sm font-medium flex items-center justify-between">
                 <span>Who is in now</span>
                 <Button variant="outline" size="sm" onClick={fetchKioskCurrent} disabled={kioskLoading}>
-                  <Icon name="refresh" className="h-4 w-4 mr-1" />
+                  <Icon name="refresh" className="h-4 w-4 mr-2" />
                   Refresh
                 </Button>
               </CardTitle>
@@ -366,7 +367,14 @@ export const AdminDashboard: React.FC = () => {
                   {/* Pimlico box */}
                   <div>
                     <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
-                      Pimlico
+                      <a
+                        href={`${typeof window !== 'undefined' ? window.location.origin : ''}/kiosk/pimlico`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Pimlico
+                      </a>
                     </h3>
                     <div className="flex flex-wrap gap-2">
                       {kioskLoading ? (
@@ -375,25 +383,42 @@ export const AdminDashboard: React.FC = () => {
                         <p className="text-xs text-slate-500">No one currently signed in.</p>
                       ) : (
                         pimlicoCurrent.map((p) => (
-                          <button
+                          <div
                             key={p.userId}
-                            type="button"
                             className="flex items-center gap-2 px-2 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-xs"
                           >
-                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 dark:bg-slate-700 text-[11px] font-semibold">
-                              {(p.firstName.charAt(0) + p.lastName.charAt(0)).toUpperCase()}
-                            </span>
+                            <Avatar className="h-6 w-6 rounded-full">
+                              <AvatarImage src={p.photoUrl} alt="" />
+                              <AvatarFallback className="rounded-full bg-slate-200 dark:bg-slate-700 text-[11px] font-semibold">
+                                {(p.firstName.charAt(0) + p.lastName.charAt(0)).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
                             <span>{p.firstName} {p.lastName}</span>
-                          </button>
+                          </div>
                         ))
                       )}
                     </div>
+                    <a
+                      href={`${typeof window !== 'undefined' ? window.location.origin : ''}/kiosk/pimlico`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-primary hover:underline mt-1 inline-block"
+                    >
+                      Open kiosk
+                    </a>
                   </div>
 
                   {/* Kensington box */}
                   <div>
                     <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
-                      Kensington
+                      <a
+                        href={`${typeof window !== 'undefined' ? window.location.origin : ''}/kiosk/kensington`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        Kensington
+                      </a>
                     </h3>
                     <div className="flex flex-wrap gap-2">
                       {kioskLoading ? (
@@ -402,22 +427,32 @@ export const AdminDashboard: React.FC = () => {
                         <p className="text-xs text-slate-500">No one currently signed in.</p>
                       ) : (
                         kensingtonCurrent.map((p) => (
-                          <button
+                          <div
                             key={p.userId}
-                            type="button"
                             className="flex items-center gap-2 px-2 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-xs"
                             title={p.isDummy ? 'Dummy always-in user' : undefined}
                           >
-                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 dark:bg-slate-700 text-[11px] font-semibold">
-                              {(p.firstName.charAt(0) + p.lastName.charAt(0)).toUpperCase()}
-                            </span>
+                            <Avatar className="h-6 w-6 rounded-full">
+                              <AvatarImage src={p.photoUrl} alt="" />
+                              <AvatarFallback className="rounded-full bg-slate-200 dark:bg-slate-700 text-[11px] font-semibold">
+                                {(p.firstName.charAt(0) + p.lastName.charAt(0)).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
                             <span>
                               {p.firstName} {p.lastName}
                             </span>
-                          </button>
+                          </div>
                         ))
                       )}
                     </div>
+                    <a
+                      href={`${typeof window !== 'undefined' ? window.location.origin : ''}/kiosk/kensington`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-primary hover:underline mt-1 inline-block"
+                    >
+                      Open kiosk
+                    </a>
                   </div>
                 </div>
               )}

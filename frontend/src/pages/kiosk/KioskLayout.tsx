@@ -4,57 +4,74 @@ import { Icon } from '@/components/ui/Icon';
 interface KioskLayoutProps {
   locationName: 'Pimlico' | 'Kensington';
   children: ReactNode;
-  onHome?: () => void;
+  bottomRightLabel: string;
+  bottomRightOnClick: () => void;
 }
 
-export function KioskLayout({ locationName, children, onHome }: KioskLayoutProps) {
-  return (
-    <div className="min-h-screen flex flex-col relative text-white">
-      {/* Full-bleed background: SVG + fallback grey */}
-      <div
-        className="absolute inset-0 z-0"
-        style={{
-          backgroundColor: '#d8d8d8',
-          backgroundImage: "url('/images/bg.svg')",
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-        }}
-      />
+export function KioskLayout({
+  locationName,
+  children,
+  bottomRightLabel,
+  bottomRightOnClick,
+}: KioskLayoutProps) {
+  const isPimlico = locationName === 'Pimlico';
 
-      {/* Content above background */}
+  return (
+    <div
+      className={`min-h-screen flex flex-col relative ${
+        isPimlico ? 'text-slate-900 bg-white' : 'text-white'
+      }`}
+    >
+      {!isPimlico && (
+        <div
+          className="absolute inset-0 z-0"
+          style={{
+            backgroundColor: '#d8d8d8',
+            backgroundImage: "url('/images/bg.svg')",
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+          }}
+        />
+      )}
+
       <div className="relative z-10 flex flex-col min-h-screen">
-        {/* Header: THERAPISTS WORKING NOW only */}
         <header className="w-full px-4 py-5 sm:py-6">
           <div className="max-w-4xl mx-auto">
-            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight uppercase text-white drop-shadow-sm">
+            <h1
+              className={`text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight uppercase ${
+                isPimlico ? 'text-green-600' : 'text-white drop-shadow-sm'
+              }`}
+            >
               Therapists Working Now
             </h1>
-            <span className="mt-1 block text-sm font-medium text-white/90">
+            <span
+              className={`mt-1 block text-sm font-medium ${
+                isPimlico ? 'text-slate-600' : 'text-white/90'
+              }`}
+            >
               {locationName}
             </span>
           </div>
         </header>
 
-        {/* Scrollable content */}
         <main className="flex-1 w-full">
-          <div className="max-w-4xl mx-auto px-4 py-2 pb-28">
-            {children}
-          </div>
+          <div className="max-w-4xl mx-auto px-4 py-2 pb-28">{children}</div>
         </main>
 
-        {/* Fixed bottom-right: Sign In/Out (Home) control only */}
         <footer className="fixed bottom-0 right-0 z-20 p-4">
           <button
             type="button"
-            onClick={onHome}
-            className="flex flex-col items-center gap-0.5 text-white/95 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/50 rounded-lg p-2 transition-colors"
-            aria-label="Sign In / Out and Home"
+            onClick={bottomRightOnClick}
+            className={`flex flex-col items-center gap-0.5 rounded-lg p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+              isPimlico
+                ? 'text-slate-800 hover:text-slate-900 focus:ring-green-600'
+                : 'text-white/95 hover:text-white focus:ring-white/50'
+            }`}
+            aria-label={bottomRightLabel}
           >
             <Icon name="swap_horiz" size={28} className="block" />
-            <span className="text-[10px] sm:text-xs font-medium leading-tight text-center">
-              Sign In
-              <br />
-              / Out
+            <span className="text-[10px] sm:text-xs font-medium leading-tight text-center whitespace-nowrap">
+              {bottomRightLabel}
             </span>
           </button>
         </footer>

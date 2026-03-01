@@ -607,6 +607,8 @@ export const adminApi = {
     to?: string;
     page?: number;
     pageSize?: number;
+    sortBy?: 'name' | 'time';
+    sortOrder?: 'asc' | 'desc';
   }) => {
     const query: Record<string, string | number> = {};
     if (params.location) query.location = params.location;
@@ -616,13 +618,14 @@ export const adminApi = {
     if (params.to) query.to = params.to;
     if (params.page) query.page = params.page;
     if (params.pageSize) query.pageSize = params.pageSize;
+    if (params.sortBy) query.sortBy = params.sortBy;
+    if (params.sortOrder) query.sortOrder = params.sortOrder;
 
     return api.get<
       ApiResponse<{
         data: Array<{
           id: string;
           name: string;
-          location: string;
           time: string;
           status: 'In' | 'Out';
         }>;

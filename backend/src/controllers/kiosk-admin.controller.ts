@@ -2,7 +2,7 @@ import { Response } from 'express';
 import type { AuthRequest } from '../middleware/auth.middleware';
 import { db } from '../config/database';
 import { kioskLogs, users, locations } from '../db/schema';
-import { and, desc, eq, ilike, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, sql } from 'drizzle-orm';
 import { logger } from '../utils/logger.util';
 
 export class KioskAdminController {
@@ -25,6 +25,8 @@ export class KioskAdminController {
         Math.max(1, parseInt(req.query.pageSize as string, 10) || 50)
       );
       const offset = (page - 1) * pageSize;
+      const sortBy = (req.query.sortBy as string)?.toLowerCase() === 'name' ? 'name' : 'time';
+      const sortOrder = (req.query.sortOrder as string)?.toLowerCase() === 'asc' ? 'asc' : 'desc';
 
       let locationFilter: 'Pimlico' | 'Kensington' | null = null;
       if (location) {
@@ -84,7 +86,11 @@ export class KioskAdminController {
 
       const total = Number(countRow?.count ?? 0);
 
-      const rows = await db
+      const orderByTime = sortOrder === 'asc' ? asc(kioskLogs.actionTime) : desc(kioskLogs.actionTime);
+      const orderByNameFirst = sortOrder === 'asc' ? asc(users.firstName) : desc(users.firstName);
+      const orderByNameLast = sortOrder === 'asc' ? asc(users.lastName) : desc(users.lastName);
+
+      const query = db
         .select({
           id: kioskLogs.id,
           nameFirst: users.firstName,
@@ -96,15 +102,18 @@ export class KioskAdminController {
         .from(kioskLogs)
         .innerJoin(users, eq(kioskLogs.userId, users.id))
         .innerJoin(locations, eq(kioskLogs.locationId, locations.id))
-        .where(whereClause)
-        .orderBy(desc(kioskLogs.actionTime))
+        .where(whereClause);
+
+      const rows = await (sortBy === 'name'
+        ? query.orderBy(orderByNameFirst, orderByNameLast, orderByTime)
+        : query.orderBy(orderByTime)
+      )
         .limit(pageSize)
         .offset(offset);
 
       const data = rows.map((r) => ({
         id: r.id,
         name: `${r.nameFirst} ${r.nameLast}`.trim(),
-        location: r.locationName,
         time: r.actionTime,
         status: r.action === 'sign_in' ? 'In' : 'Out',
       }));

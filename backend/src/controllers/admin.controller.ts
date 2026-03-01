@@ -82,10 +82,31 @@ export class AdminController {
           .json({ success: false, error: 'Authentication required' });
       }
 
-      const [overview, pimlico, kensington] = await Promise.all([
+      const [overview, pimlicoRaw, kensingtonRaw] = await Promise.all([
         KioskService.getAdminOverview(),
         KioskService.getPresenceByLocation('Pimlico'),
         KioskService.getPresenceByLocation('Kensington'),
+      ]);
+
+      const resolvePhotoUrls = async <T extends { photoUrl?: string | null }>(
+        list: T[]
+      ): Promise<T[]> => {
+        return Promise.all(
+          list.map(async (p) => {
+            if (!p.photoUrl) return { ...p, photoUrl: undefined };
+            try {
+              const url = await FileService.generatePresignedGetUrl(p.photoUrl, 'photos');
+              return { ...p, photoUrl: url };
+            } catch {
+              return { ...p, photoUrl: undefined };
+            }
+          })
+        );
+      };
+
+      const [pimlico, kensington] = await Promise.all([
+        resolvePhotoUrls(pimlicoRaw),
+        resolvePhotoUrls(kensingtonRaw),
       ]);
 
       res.status(200).json({

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { kioskApi, type KioskPractitioner } from '@/services/api';
 import { KioskLayout } from './KioskLayout';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -15,11 +14,10 @@ interface KioskPageProps {
 type ViewMode = 'signIn' | 'signedIn';
 
 export function KioskPage({ location }: KioskPageProps) {
-  const navigate = useNavigate();
   const [practitioners, setPractitioners] = useState<KioskPractitioner[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('signIn');
+  const [viewMode, setViewMode] = useState<ViewMode>('signedIn');
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
 
   const loadPractitioners = async (signal?: AbortSignal) => {
@@ -89,8 +87,13 @@ export function KioskPage({ location }: KioskPageProps) {
     return practitioners;
   }, [viewMode, practitioners]);
 
-  const handleHome = () => {
+  const goToSignInView = () => {
     setViewMode('signIn');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const goToSignedInView = () => {
+    setViewMode('signedIn');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -100,85 +103,27 @@ export function KioskPage({ location }: KioskPageProps) {
     return `${first}${last}`.toUpperCase() || 'U';
   };
 
-  const otherLocation: LocationName = location === 'Pimlico' ? 'Kensington' : 'Pimlico';
+  const isPimlico = location === 'Pimlico';
 
   return (
     <KioskLayout
       locationName={location}
-      onHome={handleHome}
+      bottomRightLabel={viewMode === 'signedIn' ? 'Sign In' : 'Signed In Now'}
+      bottomRightOnClick={viewMode === 'signedIn' ? goToSignInView : goToSignedInView}
     >
-      {/* Location toggle – subtle, works on gradient/grey */}
-      <div className="flex flex-wrap items-center gap-2 mb-3">
-        <div className="inline-flex rounded-full bg-white/20 backdrop-blur-sm p-0.5 border border-white/30">
-          <button
-            type="button"
-            onClick={() => navigate('/kiosk/pimlico')}
-            className={`px-3 py-1.5 text-sm font-medium rounded-full transition-colors ${
-              location === 'Pimlico'
-                ? 'bg-white/90 text-slate-800'
-                : 'text-white/90 hover:text-white'
-            }`}
-          >
-            Pimlico
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate('/kiosk/kensington')}
-            className={`px-3 py-1.5 text-sm font-medium rounded-full transition-colors ${
-              location === 'Kensington'
-                ? 'bg-white/90 text-slate-800'
-                : 'text-white/90 hover:text-white'
-            }`}
-          >
-            Kensington
-          </button>
-        </div>
-        <span className="text-xs text-white/80">
-          Viewing {location}. Switch to {otherLocation}.
-        </span>
-      </div>
-
-      {/* View mode toggle – subtle */}
-      <div className="flex justify-center mb-6">
-        <div className="inline-flex rounded-full bg-white/20 backdrop-blur-sm p-0.5 border border-white/30">
-          <button
-            type="button"
-            onClick={() => setViewMode('signIn')}
-            className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${
-              viewMode === 'signIn'
-                ? 'bg-white/90 text-slate-800'
-                : 'text-white/90 hover:text-white'
-            }`}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('signedIn')}
-            className={`px-4 py-2 text-sm font-medium rounded-full transition-colors ${
-              viewMode === 'signedIn'
-                ? 'bg-white/90 text-slate-800'
-                : 'text-white/90 hover:text-white'
-            }`}
-          >
-            Signed In Now
-          </button>
-        </div>
-      </div>
-
       {loading && (
-        <div className="py-12 text-center text-lg text-white/90">
+        <div className={`py-12 text-center text-lg ${isPimlico ? 'text-slate-600' : 'text-white/90'}`}>
           Loading therapists…
         </div>
       )}
 
       {!loading && error && (
         <div className="py-8 text-center space-y-4">
-          <p className="text-white font-semibold drop-shadow-sm">{error}</p>
+          <p className={isPimlico ? 'text-slate-800 font-semibold' : 'text-white font-semibold drop-shadow-sm'}>{error}</p>
           <Button
             type="button"
             onClick={() => loadPractitioners()}
-            className="bg-white/90 text-slate-800 hover:bg-white border-0"
+            className={isPimlico ? 'bg-slate-800 text-white hover:bg-slate-700' : 'bg-white/90 text-slate-800 hover:bg-white border-0'}
           >
             <Icon name="refresh" size={18} className="mr-2" />
             Retry
@@ -189,8 +134,10 @@ export function KioskPage({ location }: KioskPageProps) {
       {!loading && !error && (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6 pb-4">
           {displayedPractitioners.length === 0 ? (
-            <p className="col-span-full text-center text-white/90 text-base py-8">
-              No therapists are currently signed in.
+            <p className={`col-span-full text-center text-base py-8 ${isPimlico ? 'text-slate-600' : 'text-white/90'}`}>
+              {viewMode === 'signedIn'
+                ? 'No therapists are currently signed in.'
+                : 'No practitioners to show.'}
             </p>
           ) : (
             displayedPractitioners.map((p) => {
@@ -212,21 +159,43 @@ export function KioskPage({ location }: KioskPageProps) {
                   type="button"
                   disabled={isDisabled}
                   onClick={handleClick}
-                  className={`flex flex-col items-center gap-3 rounded-2xl p-4 transition-transform focus:outline-none focus:ring-2 focus:ring-white/50 ${
+                  className={`flex flex-col items-center gap-3 rounded-2xl p-4 transition-transform focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+                    isPimlico
+                      ? 'focus:ring-green-600'
+                      : 'focus:ring-white/50'
+                  } ${
                     isSignedIn
-                      ? 'ring-2 ring-white/60 bg-white/15'
-                      : 'bg-white/10 hover:bg-white/20'
+                      ? isPimlico
+                        ? 'ring-2 ring-green-500 bg-green-50'
+                        : 'ring-2 ring-white/60 bg-white/15'
+                      : isPimlico
+                        ? 'bg-white/80 hover:bg-white border border-slate-200'
+                        : 'bg-white/10 hover:bg-white/20'
                   } ${isDisabled ? 'opacity-60 cursor-not-allowed' : 'hover:scale-[1.02]'}`}
                 >
                   <div className="relative">
-                    <Avatar className="h-24 w-24 sm:h-28 sm:w-28 border-2 border-white/50 shadow-lg ring-2 ring-white/20 rounded-full overflow-hidden">
+                    <Avatar
+                      className={`h-24 w-24 sm:h-28 sm:w-28 border-2 shadow-lg rounded-full overflow-hidden ${
+                        isPimlico ? 'border-slate-200' : 'border-white/50 ring-2 ring-white/20'
+                      }`}
+                    >
                       <AvatarImage src={p.photoUrl} alt={fullName} />
-                      <AvatarFallback className="bg-white/30 text-white text-xl font-bold">
+                      <AvatarFallback
+                        className={
+                          isPimlico
+                            ? 'bg-slate-200 text-slate-700 text-xl font-bold'
+                            : 'bg-white/30 text-white text-xl font-bold'
+                        }
+                      >
                         {getInitials(p.firstName, p.lastName)}
                       </AvatarFallback>
                     </Avatar>
                     {isSignedIn && (
-                      <span className="absolute -bottom-0.5 -right-0.5 inline-flex items-center justify-center rounded-full bg-white/90 text-slate-700 p-1 shadow">
+                      <span
+                        className={`absolute -bottom-0.5 -right-0.5 inline-flex items-center justify-center rounded-full p-1 shadow ${
+                          isPimlico ? 'bg-green-500 text-white' : 'bg-white/90 text-slate-700'
+                        }`}
+                      >
                         <Icon name="check" size={14} />
                       </span>
                     )}
@@ -236,7 +205,11 @@ export function KioskPage({ location }: KioskPageProps) {
                       </span>
                     )}
                   </div>
-                  <span className="text-sm sm:text-base font-semibold text-white drop-shadow-sm text-center leading-tight">
+                  <span
+                    className={`text-sm sm:text-base font-semibold text-center leading-tight ${
+                      isPimlico ? 'text-slate-800' : 'text-white drop-shadow-sm'
+                    }`}
+                  >
                     {fullName}
                   </span>
                 </button>

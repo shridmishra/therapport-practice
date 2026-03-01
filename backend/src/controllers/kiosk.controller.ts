@@ -1,6 +1,24 @@
 import { Request, Response } from 'express';
 import { KioskService } from '../services/kiosk.service';
+import { FileService } from '../services/file.service';
 import { logger } from '../utils/logger.util';
+
+async function resolvePractitionerPhotoUrls<
+  T extends { photoUrl?: string | null }
+>(list: T[]): Promise<T[]> {
+  const result = await Promise.all(
+    list.map(async (p) => {
+      if (!p.photoUrl) return { ...p, photoUrl: undefined };
+      try {
+        const url = await FileService.generatePresignedGetUrl(p.photoUrl, 'photos');
+        return { ...p, photoUrl: url };
+      } catch {
+        return { ...p, photoUrl: undefined };
+      }
+    })
+  );
+  return result;
+}
 
 export class KioskController {
   async getLocations(req: Request, res: Response) {
@@ -28,12 +46,13 @@ export class KioskController {
       const locationName = KioskService.normalizeLocationParam(locationParam);
       const { location, practitioners } =
         await KioskService.getPractitionersForLocation(locationName);
+      const practitionersWithPhotos = await resolvePractitionerPhotoUrls(practitioners);
 
       res.status(200).json({
         success: true,
         data: {
           location,
-          practitioners,
+          practitioners: practitionersWithPhotos,
         },
       });
     } catch (error) {
@@ -77,12 +96,13 @@ export class KioskController {
 
       const { location, practitioners } =
         await KioskService.getPractitionersForLocation(locationName);
+      const practitionersWithPhotos = await resolvePractitionerPhotoUrls(practitioners);
 
       res.status(200).json({
         success: true,
         data: {
           location,
-          practitioners,
+          practitioners: practitionersWithPhotos,
         },
       });
     } catch (error) {
@@ -128,12 +148,13 @@ export class KioskController {
 
       const { location, practitioners } =
         await KioskService.getPractitionersForLocation(locationName);
+      const practitionersWithPhotos = await resolvePractitionerPhotoUrls(practitioners);
 
       res.status(200).json({
         success: true,
         data: {
           location,
-          practitioners,
+          practitioners: practitionersWithPhotos,
         },
       });
     } catch (error) {
