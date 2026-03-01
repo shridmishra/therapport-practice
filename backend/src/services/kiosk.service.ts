@@ -369,7 +369,11 @@ export class KioskService {
   }> {
     const dummyKensingtonUserId = await getDummyKensingtonUserId();
     if (dummyKensingtonUserId && userId === dummyKensingtonUserId) {
-      return { isSignedIn: true, location: 'Kensington', signedInAt: null };
+      const kensington = await getLocationByName('Kensington');
+      const latestByUser = await getLatestKioskActionsForLocation(kensington.id);
+      const latest = latestByUser.get(dummyKensingtonUserId);
+      const signedInAt = latest?.actionTime ?? null;
+      return { isSignedIn: true, location: 'Kensington', signedInAt };
     }
 
     // Find the most recent kiosk log for this user across all locations
