@@ -41,7 +41,20 @@ export interface AdminKioskRow {
   isDummy: boolean;
 }
 
-const DUMMY_KENSINGTON_USER_ID = process.env.DUMMY_KENSINGTON_USER_ID || '';
+const DUMMY_KENSINGTON_EMAIL = 'rober.assogioli@therapport.co.uk';
+
+let cachedDummyKensingtonUserId: string | null | undefined = undefined;
+
+async function getDummyKensingtonUserId(): Promise<string | null> {
+  if (cachedDummyKensingtonUserId !== undefined) return cachedDummyKensingtonUserId ?? null;
+  const [row] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.email, DUMMY_KENSINGTON_EMAIL))
+    .limit(1);
+  cachedDummyKensingtonUserId = row?.id ?? null;
+  return cachedDummyKensingtonUserId;
+}
 
 function isValidLocationName(name: string): name is LocationName {
   return name === 'Pimlico' || name === 'Kensington';
@@ -163,13 +176,14 @@ export class KioskService {
       .orderBy(sql`LOWER(${users.firstName})`, sql`LOWER(${users.lastName})`);
 
     const latestByUser = await getLatestKioskActionsForLocation(location.id);
+    const dummyKensingtonUserId = await getDummyKensingtonUserId();
 
     const result: KioskPractitioner[] = practitioners.map((p) => {
       const latest = latestByUser.get(p.id);
       const isDummy = Boolean(
         locationName === 'Kensington' &&
-          DUMMY_KENSINGTON_USER_ID &&
-          p.id === DUMMY_KENSINGTON_USER_ID
+          dummyKensingtonUserId &&
+          p.id === dummyKensingtonUserId
       );
 
       const isSignedIn =
@@ -230,11 +244,12 @@ export class KioskService {
     locationName: LocationName,
     ipAddress?: string | null
   ): Promise<void> {
+    const dummyKensingtonUserId = await getDummyKensingtonUserId();
     // Prevent signing out the dummy Kensington user from kiosk endpoints
     if (
       locationName === 'Kensington' &&
-      DUMMY_KENSINGTON_USER_ID &&
-      userId === DUMMY_KENSINGTON_USER_ID
+      dummyKensingtonUserId &&
+      userId === dummyKensingtonUserId
     ) {
       logger.info('Ignoring sign-out for dummy Kensington kiosk user', {
         userId,
@@ -283,9 +298,10 @@ export class KioskService {
       throw new Error('Pimlico and Kensington locations must exist');
     }
 
-    const [pimlicoLatest, kensingtonLatest] = await Promise.all([
+    const [pimlicoLatest, kensingtonLatest, dummyKensingtonUserId] = await Promise.all([
       getLatestKioskActionsForLocation(pimlico.id),
       getLatestKioskActionsForLocation(kensington.id),
+      getDummyKensingtonUserId(),
     ]);
 
     const practitioners = await db
@@ -309,7 +325,7 @@ export class KioskService {
       const pimlicoEntry = pimlicoLatest.get(p.id);
       const kensingtonEntry = kensingtonLatest.get(p.id);
       const isDummy = Boolean(
-        DUMMY_KENSINGTON_USER_ID && p.id === DUMMY_KENSINGTON_USER_ID
+        dummyKensingtonUserId && p.id === dummyKensingtonUserId
       );
 
       const pimlicoStatus: 'in' | 'out' =

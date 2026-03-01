@@ -28,8 +28,8 @@ This document explains how the new in/out kiosk and admin presence features work
 3. They confirm “Sign out”.
 4. Their tile returns to the “Out” state and they disappear from the current‑presence lists.
 
-> Kensington dummy user  
-> The Kensington kiosk always shows a dummy user (Robert Assagioli) so female practitioners are not shown as lone working. This dummy account is always treated as “In” at Kensington and cannot be signed out from the kiosk.
+> Kensington dummy user
+> The Kensington kiosk always shows a dummy user (Rober Assogioli) so female practitioners are not shown as lone working. This dummy account is always treated as “In” at Kensington and cannot be signed out from the kiosk. The backend resolves this user by the static email `rober.assogioli@therapport.co.uk`.
 
 ## Admin dashboard – who is currently in
 

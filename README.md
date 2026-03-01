@@ -109,7 +109,6 @@ npm run dev
   - `JWT_REFRESH_SECRET`
   - `EMAIL_USER`, `EMAIL_PASSWORD`, `EMAIL_FROM`
   - `FRONTEND_URL` – the HTTPS URL of the deployed frontend (used for CORS).
-  - `DUMMY_KENSINGTON_USER_ID` – the user id of the dummy always‑signed‑in Kensington practitioner.
 - Build command: `npm run build`
 - Start command: `npm start`
 
