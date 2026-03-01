@@ -187,7 +187,7 @@ export class KioskService {
       );
 
       const isSignedIn =
-        (latest?.action === 'sign_in') || (isDummy && !latest);
+        (latest?.action === 'sign_in') || (isDummy && locationName === 'Kensington');
 
       return {
         id: p.id,
@@ -333,11 +333,7 @@ export class KioskService {
 
       // Dummy Kensington user is always effectively "in"
       const kensingtonStatus: 'in' | 'out' =
-        kensingtonEntry?.action === 'sign_in'
-          ? 'in'
-          : isDummy && !kensingtonEntry
-            ? 'in'
-            : 'out';
+        isDummy ? 'in' : (kensingtonEntry?.action === 'sign_in' ? 'in' : 'out');
 
       const lastCheckInTimes: Date[] = [];
       if (pimlicoEntry?.action === 'sign_in') lastCheckInTimes.push(pimlicoEntry.actionTime);
@@ -371,6 +367,11 @@ export class KioskService {
     location: LocationName | null;
     signedInAt: Date | null;
   }> {
+    const dummyKensingtonUserId = await getDummyKensingtonUserId();
+    if (dummyKensingtonUserId && userId === dummyKensingtonUserId) {
+      return { isSignedIn: true, location: 'Kensington', signedInAt: null };
+    }
+
     // Find the most recent kiosk log for this user across all locations
     const [row] = await db
       .select({
