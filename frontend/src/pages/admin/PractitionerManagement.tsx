@@ -704,7 +704,7 @@ export const PractitionerManagement: React.FC = () => {
                   <div className="text-center py-8 text-slate-500">Loading details...</div>
                 ) : (
                   <Tabs value={activeTab} onValueChange={setActiveTab}>
-                    <TabsList className="grid w-full grid-cols-2 sm:grid-cols-5">
+                    <TabsList className="flex w-full overflow-x-auto whitespace-nowrap justify-start sm:grid sm:grid-cols-5 p-1 mb-4">
                       <TabsTrigger value="profile">Profile</TabsTrigger>
                       <TabsTrigger value="membership">Membership</TabsTrigger>
                       <TabsTrigger value="credits">Credits & vouchers</TabsTrigger>
