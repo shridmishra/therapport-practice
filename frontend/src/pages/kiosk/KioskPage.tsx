@@ -161,12 +161,12 @@ export function KioskPage({ location }: KioskPageProps) {
                   onClick={handleClick}
                   className={`flex flex-col items-center gap-3 rounded-2xl p-4 transition-transform focus:outline-none focus:ring-2 focus:ring-offset-2 ${
                     isPimlico
-                      ? 'focus:ring-green-600'
+                      ? 'focus:ring-[#8AC047]'
                       : 'focus:ring-white/50'
                   } ${
                     isSignedIn
                       ? isPimlico
-                        ? 'ring-2 ring-green-500 bg-green-50'
+                        ? 'ring-2 ring-[#8AC047] bg-[#8AC047]/10'
                         : 'ring-2 ring-white/60 bg-white/15'
                       : isPimlico
                         ? 'bg-white/80 hover:bg-white border border-slate-200'
@@ -193,15 +193,11 @@ export function KioskPage({ location }: KioskPageProps) {
                     {isSignedIn && (
                       <span
                         className={`absolute -bottom-0.5 -right-0.5 inline-flex items-center justify-center rounded-full p-1 shadow ${
-                          isPimlico ? 'bg-green-500 text-white' : 'bg-white/90 text-slate-700'
+                          isPimlico ? 'text-white' : 'bg-white/90 text-slate-700'
                         }`}
+                        style={isPimlico ? { backgroundColor: '#8AC047' } : undefined}
                       >
                         <Icon name="check" size={14} />
-                      </span>
-                    )}
-                    {p.isDummy && (
-                      <span className="absolute -top-0.5 -left-0.5 inline-flex items-center justify-center rounded-full bg-white/90 text-slate-700 text-[10px] font-medium px-1.5 py-0.5">
-                        Demo
                       </span>
                     )}
                   </div>

@@ -38,9 +38,10 @@ export function KioskLayout({
         <header className="w-full px-4 py-5 sm:py-6">
           <div className="max-w-4xl mx-auto">
             <h1
-              className={`text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight uppercase ${
-                isPimlico ? 'text-green-600' : 'text-white drop-shadow-sm'
+              className={`font-bold tracking-tight uppercase ${
+                isPimlico ? '' : 'text-2xl sm:text-3xl md:text-4xl text-white drop-shadow-sm'
               }`}
+              style={isPimlico ? { color: '#8AC047', fontFamily: "'Amatic SC'", fontSize: '74px' } : undefined}
             >
               Therapists Working Now
             </h1>
@@ -64,7 +65,7 @@ export function KioskLayout({
             onClick={bottomRightOnClick}
             className={`flex flex-col items-center gap-0.5 rounded-lg p-2 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${
               isPimlico
-                ? 'text-slate-800 hover:text-slate-900 focus:ring-green-600'
+                ? 'text-slate-800 hover:text-slate-900 focus:ring-[#8AC047]'
                 : 'text-white/95 hover:text-white focus:ring-white/50'
             }`}
             aria-label={bottomRightLabel}
