@@ -20,6 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import axios from 'axios';
+import { AdminOccupancySection } from './AdminOccupancySection';
 
 function getDefaultDateRange(): { fromDate: string; toDate: string } {
   const now = new Date();
@@ -347,9 +348,12 @@ export const AdminDashboard: React.FC = () => {
               </Button>
             </CardContent>
           </Card>
+        </div>
 
-          {/* Who is in now – Pimlico & Kensington */}
-          <Card>
+        <AdminOccupancySection />
+
+        {/* Who is in now – Pimlico & Kensington */}
+        <Card>
             <CardHeader>
               <CardTitle className="text-sm font-medium flex items-center justify-between">
                 <span>Who is in now</span>
@@ -458,7 +462,6 @@ export const AdminDashboard: React.FC = () => {
               )}
             </CardContent>
           </Card>
-        </div>
 
         {/* Missing Information Section */}
         <Card>

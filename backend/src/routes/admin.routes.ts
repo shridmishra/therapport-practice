@@ -45,6 +45,34 @@ router.get(
 );
 
 router.get(
+  '/occupancy/fy-months',
+  authenticate,
+  requireRole('admin'),
+  adminController.getOccupancyFyMonths.bind(adminController)
+);
+
+router.get(
+  '/occupancy/annual',
+  authenticate,
+  requireRole('admin'),
+  adminController.getOccupancyAnnual.bind(adminController)
+);
+
+router.get(
+  '/occupancy/timeseries',
+  authenticate,
+  requireRole('admin'),
+  adminController.getOccupancyTimeSeries.bind(adminController)
+);
+
+router.get(
+  '/occupancy/heatmap',
+  authenticate,
+  requireRole('admin'),
+  adminController.getOccupancyHeatmap.bind(adminController)
+);
+
+router.get(
   '/prices',
   authenticate,
   requireRole('admin'),

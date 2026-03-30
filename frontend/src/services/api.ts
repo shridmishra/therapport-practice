@@ -726,6 +726,90 @@ export const adminApi = {
     >('/admin/stats', { params });
   },
 
+  getOccupancyFyMonths: (params?: { fyStartYear?: number }, signal?: AbortSignal) => {
+    return api.get<
+      ApiResponse<{
+        fyStartYear: number;
+        fyLabel: string;
+        months: Array<{
+          monthKey: string;
+          monthLabel: string;
+          fromDate: string;
+          toDate: string;
+          kensingtonPercent: number;
+          pimlicoPercent: number;
+          combinedPercent: number;
+        }>;
+      }>
+    >('/admin/occupancy/fy-months', { params, signal });
+  },
+
+  getOccupancyAnnual: (signal?: AbortSignal) => {
+    return api.get<
+      ApiResponse<{
+        rows: Array<{
+          fyLabel: string;
+          fyStartYear: number;
+          fromDate: string;
+          toDate: string;
+          kensingtonPercent: number;
+          pimlicoPercent: number;
+          combinedPercent: number;
+        }>;
+      }>
+    >('/admin/occupancy/annual', { signal });
+  },
+
+  getOccupancyTimeSeries: (
+    params: {
+      range: 'last_month' | 'last_3_months' | 'fy_to_date' | 'two_fy_window' | 'all_time';
+      scale: 'monthly' | 'annual';
+    },
+    signal?: AbortSignal
+  ) => {
+    return api.get<
+      ApiResponse<{
+        range: { from: string; to: string; preset: string };
+        scale: string;
+        points: Array<{
+          periodKey: string;
+          periodLabel: string;
+          kensingtonPercent: number;
+          pimlicoPercent: number;
+          combinedPercent: number;
+        }>;
+      }>
+    >('/admin/occupancy/timeseries', { params, signal });
+  },
+
+  getOccupancyHeatmap: (
+    params: {
+      range: 'last_month' | 'last_3_months' | 'fy_to_date' | 'two_fy_window' | 'all_time';
+    },
+    signal?: AbortSignal
+  ) => {
+    return api.get<
+      ApiResponse<{
+        range: { from: string; to: string; preset: string };
+        hours: number[];
+        hourLabels: string[];
+        columns: Array<{
+          roomId: string;
+          roomName: string;
+          locationName: string;
+          displayLabel: string;
+        }>;
+        cells: Array<{
+          roomId: string;
+          hour: number;
+          occupancyPercent: number;
+          bookedHours: number;
+          capacityHours: number;
+        }>;
+      }>
+    >('/admin/occupancy/heatmap', { params, signal });
+  },
+
   getPractitioners: (
     search?: string,
     page = 1,

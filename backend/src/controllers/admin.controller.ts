@@ -14,7 +14,6 @@ import {
   emailNotifications,
   passwordResets,
   emailChangeRequests,
-  rooms,
 } from '../db/schema';
 import { eq, and, or, not, ilike, aliasedTable, isNull, sql, SQL, count, gte, lte, lt, desc, asc, ne } from 'drizzle-orm';
 import { logger } from '../utils/logger.util';
@@ -28,6 +27,7 @@ import { CreditService } from '../services/credit.service';
 import { VoucherService } from '../services/voucher.service';
 import { getRevenueForMonthGbp } from '../services/stripe-payment.service';
 import { KioskService } from '../services/kiosk.service';
+import * as OccupancyService from '../services/occupancy.service';
 import * as PricingService from '../services/pricing.service';
 import { setRecurringTerminationBodySchema } from '../schemas/admin.schemas';
 
@@ -97,9 +97,6 @@ const adminPricesUpdateSchema = z.object({
     )
     .min(1, 'At least one permanent slot rate is required'),
 });
-
-/** Operating hours 08:00–22:00 = 14h per room per day for occupancy capacity. */
-const DAILY_OPERATING_HOURS = 14;
 
 export class AdminController {
   async getKioskCurrent(req: AuthRequest, res: Response) {
@@ -536,46 +533,7 @@ export class AdminController {
         })
         .from(memberships);
 
-      // Occupancy: booked slot-hours vs total slot capacity in date range (08:00–22:00 = 14h per room per day)
-      const [roomCountRow] = await db
-        .select({ count: count() })
-        .from(rooms)
-        .where(eq(rooms.active, true));
-      const roomCount = roomCountRow?.count || 0;
-
-      const fromDateObj = new Date(fromDate + 'T12:00:00Z');
-      const toDateObj = new Date(toDate + 'T12:00:00Z');
-      const daysInRange =
-        Math.max(0, Math.ceil((toDateObj.getTime() - fromDateObj.getTime()) / (24 * 60 * 60 * 1000)) + 1);
-      const totalSlotHours = daysInRange * roomCount * DAILY_OPERATING_HOURS;
-
-      const confirmedBookingsInRange = await db
-        .select({
-          startTime: bookings.startTime,
-          endTime: bookings.endTime,
-        })
-        .from(bookings)
-        .where(
-          and(
-            or(eq(bookings.status, 'confirmed'), eq(bookings.status, 'completed')),
-            gte(bookings.bookingDate, fromDate),
-            lte(bookings.bookingDate, toDate)
-          )
-        );
-
-      let bookedHours = 0;
-      for (const b of confirmedBookingsInRange) {
-        const startTime = String(b.startTime);
-        const endTime = String(b.endTime);
-        const [sh, sm] = startTime.split(':').map(Number);
-        const [eh, em] = endTime.split(':').map(Number);
-        const startMins = sh * 60 + (sm || 0);
-        const endMins = eh * 60 + (em || 0);
-        const durationMins = (endMins - startMins + 24 * 60) % (24 * 60);
-        bookedHours += durationMins / 60;
-      }
-      const occupancyPercent =
-        totalSlotHours > 0 ? Math.min(100, Math.round((bookedHours / totalSlotHours) * 100 * 100) / 100) : 0;
+      const occupancyResult = await OccupancyService.computeOccupancy(fromDate, toDate, 'combined');
 
       // Revenue: current month only — Stripe (from API) + booking total_price (confirmed/completed)
       const stripeRevenue = await getRevenueForMonthGbp({
@@ -606,11 +564,11 @@ export class AdminController {
           adHocCount: membershipCounts?.adHocCount || 0,
           permanentCount: membershipCounts?.permanentCount || 0,
           occupancy: {
-            fromDate,
-            toDate,
-            totalSlotHours,
-            bookedHours: Math.round(bookedHours * 100) / 100,
-            occupancyPercent,
+            fromDate: occupancyResult.fromDate,
+            toDate: occupancyResult.toDate,
+            totalSlotHours: occupancyResult.totalSlotHours,
+            bookedHours: occupancyResult.bookedHours,
+            occupancyPercent: occupancyResult.occupancyPercent,
           },
           revenueCurrentMonthGbp: Math.round(revenueCurrentMonthGbp * 100) / 100,
         },
@@ -618,6 +576,156 @@ export class AdminController {
     } catch (error: unknown) {
       logger.error(
         'Failed to get admin stats',
+        error,
+        {
+          userId: req.user?.id,
+          method: req.method,
+          url: req.originalUrl,
+        }
+      );
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+
+  async getOccupancyFyMonths(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Authentication required' });
+      }
+
+      const fyRaw = (req.query.fyStartYear as string | undefined)?.trim();
+      let fyStartYear = OccupancyService.getFiscalYearStartYearUTC(new Date());
+      if (fyRaw) {
+        if (!/^\d{4}$/.test(fyRaw)) {
+          return res.status(400).json({
+            success: false,
+            error: 'fyStartYear must be a 4-digit year (e.g., 2025)',
+          });
+        }
+        fyStartYear = parseInt(fyRaw, 10);
+      }
+
+      const data = await OccupancyService.getFiscalYearMonthlyBreakdown(fyStartYear);
+      res.status(200).json({ success: true, data });
+    } catch (error: unknown) {
+      logger.error(
+        'Failed to get occupancy fiscal year months',
+        error,
+        {
+          userId: req.user?.id,
+          method: req.method,
+          url: req.originalUrl,
+        }
+      );
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+
+  async getOccupancyAnnual(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Authentication required' });
+      }
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      const data = await OccupancyService.getAnnualFiscalYearSummaries(todayStr);
+      res.status(200).json({ success: true, data });
+    } catch (error: unknown) {
+      logger.error(
+        'Failed to get occupancy annual summaries',
+        error,
+        {
+          userId: req.user?.id,
+          method: req.method,
+          url: req.originalUrl,
+        }
+      );
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+
+  async getOccupancyTimeSeries(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Authentication required' });
+      }
+
+      const querySchema = z.object({
+        range: z.enum([
+          'last_month',
+          'last_3_months',
+          'fy_to_date',
+          'two_fy_window',
+          'all_time',
+        ]),
+        scale: z.enum(['monthly', 'annual']),
+      });
+
+      const parsed = querySchema.safeParse({
+        range: req.query.range,
+        scale: req.query.scale,
+      });
+
+      if (!parsed.success) {
+        return res.status(400).json({
+          success: false,
+          error:
+            'Invalid query: range (last_month | last_3_months | fy_to_date | two_fy_window | all_time) and scale (monthly | annual) are required',
+        });
+      }
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      const data = await OccupancyService.getOccupancyTimeSeries(
+        parsed.data.range,
+        todayStr,
+        parsed.data.scale
+      );
+      res.status(200).json({ success: true, data });
+    } catch (error: unknown) {
+      logger.error(
+        'Failed to get occupancy time series',
+        error,
+        {
+          userId: req.user?.id,
+          method: req.method,
+          url: req.originalUrl,
+        }
+      );
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+
+  async getOccupancyHeatmap(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Authentication required' });
+      }
+
+      const querySchema = z.object({
+        range: z.enum([
+          'last_month',
+          'last_3_months',
+          'fy_to_date',
+          'two_fy_window',
+          'all_time',
+        ]),
+      });
+
+      const parsed = querySchema.safeParse({ range: req.query.range });
+      if (!parsed.success) {
+        return res.status(400).json({
+          success: false,
+          error:
+            'Invalid query: range is required (last_month | last_3_months | fy_to_date | two_fy_window | all_time)',
+        });
+      }
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      const data = await OccupancyService.getOccupancyHeatmap(parsed.data.range, todayStr);
+      res.status(200).json({ success: true, data });
+    } catch (error: unknown) {
+      logger.error(
+        'Failed to get occupancy heatmap',
         error,
         {
           userId: req.user?.id,
