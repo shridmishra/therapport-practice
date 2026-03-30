@@ -30,7 +30,14 @@ export interface Membership {
   userId: string;
   type: MembershipType;
   marketingAddon: boolean;
+  contractType?: 'standard' | 'recurring';
   permanentSchedule?: PermanentSchedule;
+  recurringStartDate?: string;
+  recurringPractitionerName?: string;
+  recurringWeekday?: 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday';
+  recurringRoomId?: string;
+  recurringTimeBand?: 'morning' | 'afternoon';
+  recurringTerminationDate?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -90,6 +97,13 @@ export interface RegisterRequest {
   password: string;
   membershipType: MembershipType;
   marketingAddon: boolean;
+  recurringSlot?: {
+    startDate: string;
+    practitionerName: string;
+    weekday: 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday';
+    roomId: string;
+    timeBand: 'morning' | 'afternoon';
+  };
 }
 
 export interface LoginRequest {

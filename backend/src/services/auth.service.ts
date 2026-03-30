@@ -1,6 +1,6 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, gte, isNull, or } from 'drizzle-orm';
 import { db } from '../config/database';
-import { users, memberships, passwordResets, emailChangeRequests } from '../db/schema';
+import { users, memberships, passwordResets, emailChangeRequests, rooms } from '../db/schema';
 import { hashPassword, comparePassword } from '../utils/password.util';
 import { generateAccessToken, generateRefreshToken } from '../utils/jwt.util';
 import { emailService } from './email.service';
@@ -34,9 +34,51 @@ export class AuthService {
     // Generate temporary password for email
     const tempPassword = data.password;
 
+    if (data.recurringSlot && data.membershipType !== 'permanent') {
+      throw new Error('Recurring slot is only available for permanent memberships');
+    }
+
     // Create user
     // Create user and membership in a transaction
     const [newUser] = await db.transaction(async (tx) => {
+      if (data.recurringSlot) {
+        // Lock room row so overlapping recurring-signup checks on this room serialize.
+        const [selectedRoom] = await tx
+          .select({
+            id: rooms.id,
+            active: rooms.active,
+          })
+          .from(rooms)
+          .where(eq(rooms.id, data.recurringSlot.roomId))
+          .limit(1)
+          .for('update');
+
+        if (!selectedRoom || !selectedRoom.active) {
+          throw new Error('Selected room is not available');
+        }
+
+        const conflictingSlots = await tx
+          .select({ id: memberships.id })
+          .from(memberships)
+          .where(
+            and(
+              eq(memberships.contractType, 'recurring'),
+              eq(memberships.recurringRoomId, data.recurringSlot.roomId),
+              eq(memberships.recurringWeekday, data.recurringSlot.weekday),
+              eq(memberships.recurringTimeBand, data.recurringSlot.timeBand),
+              or(
+                isNull(memberships.recurringTerminationDate),
+                gte(memberships.recurringTerminationDate, data.recurringSlot.startDate)
+              )
+            )
+          )
+          .limit(1);
+
+        if (conflictingSlots.length > 0) {
+          throw new Error('Selected recurring slot is no longer available');
+        }
+      }
+
       const [u] = await tx
         .insert(users)
         .values({
@@ -52,6 +94,13 @@ export class AuthService {
         userId: u.id,
         type: data.membershipType,
         marketingAddon: data.marketingAddon,
+        contractType: data.recurringSlot ? 'recurring' : 'standard',
+        recurringStartDate: data.recurringSlot?.startDate,
+        recurringPractitionerName: data.recurringSlot?.practitionerName,
+        recurringWeekday: data.recurringSlot?.weekday,
+        recurringRoomId: data.recurringSlot?.roomId,
+        recurringTimeBand: data.recurringSlot?.timeBand,
+        recurringTerminationDate: null,
       });
 
       return [u];

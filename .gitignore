@@ -28,6 +28,7 @@ lerna-debug.log*
 # Editor
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 *~

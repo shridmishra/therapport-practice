@@ -3,6 +3,7 @@ import { authController } from '../controllers/auth.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validation.middleware';
 import { z } from 'zod';
+import { recurringSlotSchema } from '../schemas/auth.schemas';
 
 const router = Router();
 
@@ -11,6 +12,9 @@ const registerSchema = z.object({
   lastName: z.string().min(1).max(100),
   email: z.string().email(),
   password: z.string().min(8),
+  membershipType: z.enum(['permanent', 'ad_hoc']),
+  marketingAddon: z.boolean(),
+  recurringSlot: recurringSlotSchema.optional(),
 });
 
 const loginSchema = z.object({

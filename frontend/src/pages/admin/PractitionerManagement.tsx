@@ -74,6 +74,8 @@ export const PractitionerManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savingMembership, setSavingMembership] = useState(false);
+  const [savingTerminationDate, setSavingTerminationDate] = useState(false);
   const [activeTab, setActiveTab] = useState('profile');
   const [creditsData, setCreditsData] = useState<{
     credit: CreditSummary;
@@ -94,6 +96,8 @@ export const PractitionerManagement: React.FC = () => {
   }>({ firstName: '', lastName: '', phone: '', status: 'pending' });
   const [membershipType, setMembershipType] = useState<'permanent' | 'ad_hoc' | ''>('');
   const [marketingAddon, setMarketingAddon] = useState(false);
+  const [contractType, setContractType] = useState<'standard' | 'recurring'>('standard');
+  const [recurringTerminationDate, setRecurringTerminationDate] = useState('');
   const [nextOfKinForm, setNextOfKinForm] = useState({
     name: '',
     relationship: '',
@@ -196,6 +200,8 @@ export const PractitionerManagement: React.FC = () => {
       });
       setMembershipType(selectedPractitioner.membership?.type || '');
       setMarketingAddon(selectedPractitioner.membership?.marketingAddon || false);
+      setContractType(selectedPractitioner.membership?.contractType || 'standard');
+      setRecurringTerminationDate(selectedPractitioner.membership?.recurringTerminationDate || '');
       setNextOfKinForm({
         name: selectedPractitioner.nextOfKin?.name || '',
         relationship: selectedPractitioner.nextOfKin?.relationship || '',
@@ -304,7 +310,7 @@ export const PractitionerManagement: React.FC = () => {
   const handleSaveMembership = async () => {
     if (!selectedPractitioner) return;
     try {
-      setSaving(true);
+      setSavingMembership(true);
       const updateData: { type?: 'permanent' | 'ad_hoc' | null; marketingAddon?: boolean } = {};
 
       if (membershipType) {
@@ -335,7 +341,30 @@ export const PractitionerManagement: React.FC = () => {
         text: error.response?.data?.error || 'Failed to update membership',
       });
     } finally {
-      setSaving(false);
+      setSavingMembership(false);
+    }
+  };
+
+  const handleSaveRecurringTerminationDate = async () => {
+    if (!selectedPractitioner) return;
+    try {
+      setSavingTerminationDate(true);
+      await adminApi.setRecurringTerminationDate(
+        selectedPractitioner.id,
+        recurringTerminationDate || null
+      );
+      await handleSelectPractitioner(selectedPractitioner.id);
+      setMessageWithTimeout({
+        type: 'success',
+        text: 'Recurring termination date updated',
+      });
+    } catch (error: any) {
+      setMessageWithTimeout({
+        type: 'error',
+        text: error.response?.data?.error || 'Failed to update termination date',
+      });
+    } finally {
+      setSavingTerminationDate(false);
     }
   };
 
@@ -732,10 +761,15 @@ export const PractitionerManagement: React.FC = () => {
                       <MembershipTab
                         membershipType={membershipType}
                         marketingAddon={marketingAddon}
-                        saving={saving}
+                        contractType={contractType}
+                        recurringTerminationDate={recurringTerminationDate}
+                        savingMembership={savingMembership}
+                        savingTerminationDate={savingTerminationDate}
                         onTypeChange={setMembershipType}
                         onAddonChange={setMarketingAddon}
                         onSave={handleSaveMembership}
+                        onTerminationDateChange={setRecurringTerminationDate}
+                        onSaveTerminationDate={handleSaveRecurringTerminationDate}
                       />
                     </TabsContent>
 

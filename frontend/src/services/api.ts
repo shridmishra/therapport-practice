@@ -26,6 +26,14 @@ const api = axios.create({
   },
 });
 
+/** Unauthenticated marketing/public endpoints — no auth headers or refresh interceptors. */
+const publicAxios = axios.create({
+  baseURL: API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
 let isRefreshing = false;
 let failedQueue: Array<{
   resolve: (value?: any) => void;
@@ -282,6 +290,19 @@ export interface AdminPricesPayload {
   adHocSubscriptionGbp: number;
   hourlyRates: AdminHourlyRateItem[];
   permanentSlotRates: AdminPermanentSlotRateItem[];
+}
+
+export interface PublicRecurringAvailabilityItem {
+  practitionerName: string;
+  weekday: 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | null;
+  timeBand: 'morning' | 'afternoon' | null;
+  startDate: string | null;
+  terminationDate: string | null;
+  room: {
+    id: string;
+    name: string;
+    roomNumber: number;
+  };
 }
 
 /** Response type for successful createBooking calls (2xx status codes). */
@@ -803,6 +824,19 @@ export const adminApi = {
       }>
     >(`/admin/practitioners/${userId}/membership`, data);
   },
+  setRecurringTerminationDate: (userId: string, recurringTerminationDate: string | null) => {
+    try {
+      validateUserId(userId);
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    return api.put<
+      ApiResponse<{
+        id: string;
+        recurringTerminationDate: string | null;
+      }>
+    >(`/admin/practitioners/${userId}/membership/termination`, { recurringTerminationDate });
+  },
 
   // Get full practitioner details (documents, next of kin, clinical executor)
   getFullPractitioner: (userId: string) => {
@@ -1037,6 +1071,50 @@ export const adminApi = {
       data
     );
   },
+};
+
+export const publicApi = {
+  getRooms: (location: 'Pimlico' | 'Kensington', signal?: AbortSignal) =>
+    publicAxios.get<
+      ApiResponse<
+        Array<{
+          id: string;
+          name: string;
+          roomNumber: number;
+        }>
+      >
+    >('/public/rooms', { params: { location }, signal }),
+
+  getAvailability: (location: 'Pimlico' | 'Kensington', signal?: AbortSignal) =>
+    publicAxios.get<ApiResponse<PublicRecurringAvailabilityItem[]>>('/public/availability', {
+      params: { location },
+      signal,
+    }),
+
+  getPrices: (location: 'Pimlico' | 'Kensington', signal?: AbortSignal) =>
+    publicAxios.get<
+      ApiResponse<{
+        membership: {
+          monthlySubscriptionGbp: number;
+          adHocSubscriptionGbp: number;
+        };
+        permanentSlotRates: Array<{
+          roomGroup: string;
+          dayType: 'weekday' | 'weekend';
+          timeBand: 'morning' | 'afternoon' | 'all_day';
+          monthlyFeeGbp: number;
+        }>;
+        adHocHourlyRates: Array<{
+          dayType: 'weekday' | 'weekend';
+          timeBand: 'morning' | 'afternoon' | 'all_day';
+          rateGbp: number;
+        }>;
+        schedule: {
+          weekdays: readonly string[];
+          timeBands: readonly string[];
+        };
+      }>
+    >('/public/prices', { params: { location }, signal }),
 };
 
 export default api;

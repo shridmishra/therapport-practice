@@ -11,6 +11,7 @@ import adminRoutes from './routes/admin.routes';
 import cronRoutes from './routes/cron.routes';
 import stripeWebhookRoutes from './routes/stripe-webhook.routes';
 import kioskRoutes from './routes/kiosk.routes';
+import publicRoutes from './routes/public.routes';
 import { errorHandler } from './middleware/error.middleware';
 import cron from 'node-cron';
 import { cronController } from './controllers/cron.controller';
@@ -100,6 +101,7 @@ app.use('/api/practitioner', practitionerRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/cron', cronRoutes);
 app.use('/api/kiosk', kioskRoutes);
+app.use('/api/public', publicRoutes);
 
 // Error handling
 app.use(errorHandler);

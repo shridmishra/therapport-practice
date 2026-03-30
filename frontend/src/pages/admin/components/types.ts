@@ -16,10 +16,15 @@ export interface ProfileTabProps {
 export interface MembershipTabProps {
     membershipType: 'permanent' | 'ad_hoc' | '';
     marketingAddon: boolean;
-    saving: boolean;
+    contractType?: 'standard' | 'recurring';
+    recurringTerminationDate: string;
+    savingMembership: boolean;
+    savingTerminationDate: boolean;
     onTypeChange: (type: 'permanent' | 'ad_hoc' | '') => void;
     onAddonChange: (addon: boolean) => void;
     onSave: () => void;
+    onTerminationDateChange: (date: string) => void;
+    onSaveTerminationDate: () => void;
 }
 
 export interface NextOfKinTabProps {

@@ -3,6 +3,8 @@ import { adminController } from '../controllers/admin.controller';
 import { kioskAdminController } from '../controllers/kiosk-admin.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/rbac.middleware';
+import { validate } from '../middleware/validation.middleware';
+import { setRecurringTerminationBodySchema } from '../schemas/admin.schemas';
 
 const router = Router();
 
@@ -115,6 +117,13 @@ router.put(
   authenticate,
   requireRole('admin'),
   adminController.updateMembership.bind(adminController)
+);
+router.put(
+  '/practitioners/:userId/membership/termination',
+  authenticate,
+  requireRole('admin'),
+  validate(setRecurringTerminationBodySchema),
+  adminController.setRecurringTerminationDate.bind(adminController)
 );
 
 // Update practitioner next of kin

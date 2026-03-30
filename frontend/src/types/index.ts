@@ -22,6 +22,13 @@ export interface PractitionerMembership {
   id?: string;
   type: 'permanent' | 'ad_hoc';
   marketingAddon: boolean;
+  contractType?: 'standard' | 'recurring';
+  recurringStartDate?: string | null;
+  recurringPractitionerName?: string | null;
+  recurringWeekday?: 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | null;
+  recurringRoomId?: string | null;
+  recurringTimeBand?: 'morning' | 'afternoon' | null;
+  recurringTerminationDate?: string | null;
 }
 
 export interface ClinicalExecutor {
@@ -55,6 +62,13 @@ export interface RegisterRequest {
   password: string;
   membershipType: 'permanent' | 'ad_hoc';
   marketingAddon: boolean;
+  recurringSlot?: {
+    startDate: string;
+    practitionerName: string;
+    weekday: 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday';
+    roomId: string;
+    timeBand: 'morning' | 'afternoon';
+  };
 }
 
 export interface LoginRequest {

@@ -20,6 +20,7 @@ import { AdminProfile } from './pages/admin/AdminProfile';
 import { AdminKioskLogs } from './pages/admin/AdminKioskLogs';
 import { AdminPrices } from './pages/admin/AdminPrices';
 import { KioskPage } from './pages/kiosk/KioskPage';
+import { PublicAvailabilityPrices } from './pages/PublicAvailabilityPrices';
 import './styles/globals.css';
 
 function App() {
@@ -124,6 +125,14 @@ function App() {
             />
             <Route path="/kiosk/pimlico" element={<KioskPage location="Pimlico" />} />
             <Route path="/kiosk/kensington" element={<KioskPage location="Kensington" />} />
+            <Route
+              path="/availability-prices/pimlico"
+              element={<PublicAvailabilityPrices location="Pimlico" />}
+            />
+            <Route
+              path="/availability-prices/kensington"
+              element={<PublicAvailabilityPrices location="Kensington" />}
+            />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

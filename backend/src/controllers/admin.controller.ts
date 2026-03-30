@@ -23,12 +23,13 @@ import { FileService } from '../services/file.service';
 import { ReminderService } from '../services/reminder.service';
 import { HeadObjectCommand } from '@aws-sdk/client-s3';
 import { r2Client, R2_BUCKET_NAME } from '../config/r2';
-import { calculateExpiryStatus } from '../utils/date.util';
+import { calculateExpiryStatus, todayUtcString } from '../utils/date.util';
 import { CreditService } from '../services/credit.service';
 import { VoucherService } from '../services/voucher.service';
 import { getRevenueForMonthGbp } from '../services/stripe-payment.service';
 import { KioskService } from '../services/kiosk.service';
 import * as PricingService from '../services/pricing.service';
+import { setRecurringTerminationBodySchema } from '../schemas/admin.schemas';
 
 const updateMembershipSchema = z.object({
   type: z.enum(['permanent', 'ad_hoc']).nullable().optional(),
@@ -320,6 +321,13 @@ export class AdminController {
           status: users.status,
           membershipType: memberships.type,
           marketingAddon: memberships.marketingAddon,
+          contractType: memberships.contractType,
+          recurringStartDate: memberships.recurringStartDate,
+          recurringPractitionerName: memberships.recurringPractitionerName,
+          recurringWeekday: memberships.recurringWeekday,
+          recurringRoomId: memberships.recurringRoomId,
+          recurringTimeBand: memberships.recurringTimeBand,
+          recurringTerminationDate: memberships.recurringTerminationDate,
         })
         .from(users)
         .leftJoin(memberships, eq(users.id, memberships.userId))
@@ -432,6 +440,13 @@ export class AdminController {
         status: 'pending' | 'active' | 'suspended' | 'rejected';
         membershipType: 'permanent' | 'ad_hoc' | null;
         marketingAddon: boolean | null;
+        contractType: 'standard' | 'recurring' | null;
+        recurringStartDate: string | null;
+        recurringPractitionerName: string | null;
+        recurringWeekday: 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | null;
+        recurringRoomId: string | null;
+        recurringTimeBand: 'morning' | 'afternoon' | null;
+        recurringTerminationDate: string | null;
       };
       const formattedPractitioners = practitioners.map((p: PractitionerRow) => ({
         id: p.id,
@@ -443,6 +458,13 @@ export class AdminController {
           ? {
             type: p.membershipType,
             marketingAddon: p.marketingAddon || false,
+            contractType: p.contractType || 'standard',
+            recurringStartDate: p.recurringStartDate,
+            recurringPractitionerName: p.recurringPractitionerName,
+            recurringWeekday: p.recurringWeekday,
+            recurringRoomId: p.recurringRoomId,
+            recurringTimeBand: p.recurringTimeBand,
+            recurringTerminationDate: p.recurringTerminationDate,
           }
           : null,
       }));
@@ -628,6 +650,13 @@ export class AdminController {
           membershipId: memberships.id,
           membershipType: memberships.type,
           marketingAddon: memberships.marketingAddon,
+          contractType: memberships.contractType,
+          recurringStartDate: memberships.recurringStartDate,
+          recurringPractitionerName: memberships.recurringPractitionerName,
+          recurringWeekday: memberships.recurringWeekday,
+          recurringRoomId: memberships.recurringRoomId,
+          recurringTimeBand: memberships.recurringTimeBand,
+          recurringTerminationDate: memberships.recurringTerminationDate,
         })
         .from(users)
         .leftJoin(memberships, eq(users.id, memberships.userId))
@@ -655,6 +684,13 @@ export class AdminController {
               id: practitioner.membershipId,
               type: practitioner.membershipType,
               marketingAddon: practitioner.marketingAddon,
+              contractType: practitioner.contractType || 'standard',
+              recurringStartDate: practitioner.recurringStartDate,
+              recurringPractitionerName: practitioner.recurringPractitionerName,
+              recurringWeekday: practitioner.recurringWeekday,
+              recurringRoomId: practitioner.recurringRoomId,
+              recurringTimeBand: practitioner.recurringTimeBand,
+              recurringTerminationDate: practitioner.recurringTerminationDate,
             }
             : null,
         },
@@ -699,6 +735,13 @@ export class AdminController {
           membershipId: memberships.id,
           membershipType: memberships.type,
           marketingAddon: memberships.marketingAddon,
+          contractType: memberships.contractType,
+          recurringStartDate: memberships.recurringStartDate,
+          recurringPractitionerName: memberships.recurringPractitionerName,
+          recurringWeekday: memberships.recurringWeekday,
+          recurringRoomId: memberships.recurringRoomId,
+          recurringTimeBand: memberships.recurringTimeBand,
+          recurringTerminationDate: memberships.recurringTerminationDate,
         })
         .from(users)
         .leftJoin(memberships, eq(users.id, memberships.userId))
@@ -742,6 +785,13 @@ export class AdminController {
               id: practitioner.membershipId,
               type: practitioner.membershipType,
               marketingAddon: practitioner.marketingAddon,
+              contractType: practitioner.contractType || 'standard',
+              recurringStartDate: practitioner.recurringStartDate,
+              recurringPractitionerName: practitioner.recurringPractitionerName,
+              recurringWeekday: practitioner.recurringWeekday,
+              recurringRoomId: practitioner.recurringRoomId,
+              recurringTimeBand: practitioner.recurringTimeBand,
+              recurringTerminationDate: practitioner.recurringTerminationDate,
             }
             : null,
           documents: await Promise.all(userDocuments.map(async (doc) => ({
@@ -1178,6 +1228,13 @@ export class AdminController {
         const updateData: {
           type?: 'permanent' | 'ad_hoc';
           marketingAddon?: boolean;
+          contractType?: 'standard' | 'recurring';
+          recurringStartDate?: string | null;
+          recurringPractitionerName?: string | null;
+          recurringWeekday?: 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | null;
+          recurringRoomId?: string | null;
+          recurringTimeBand?: 'morning' | 'afternoon' | null;
+          recurringTerminationDate?: string | null;
         } = {};
 
         if (data.type !== undefined && data.type !== null) {
@@ -1188,6 +1245,15 @@ export class AdminController {
           updateData.marketingAddon = data.marketingAddon;
           // If disabling marketing add-on, no type change needed
           // If enabling, we already validated type is permanent
+        }
+        if (data.type === 'ad_hoc') {
+          updateData.contractType = 'standard';
+          updateData.recurringStartDate = null;
+          updateData.recurringPractitionerName = null;
+          updateData.recurringWeekday = null;
+          updateData.recurringRoomId = null;
+          updateData.recurringTimeBand = null;
+          updateData.recurringTerminationDate = null;
         }
 
 
@@ -1243,6 +1309,7 @@ export class AdminController {
             userId,
             type: data.type,
             marketingAddon: data.marketingAddon ?? false,
+            contractType: 'standard',
           })
           .returning();
 
@@ -1703,6 +1770,61 @@ export class AdminController {
         url: req.originalUrl,
       });
       res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+
+  async setRecurringTerminationDate(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Authentication required' });
+      }
+
+      const { userId } = req.params;
+      const { recurringTerminationDate } = setRecurringTerminationBodySchema.parse(req.body);
+
+      const membership = await db.query.memberships.findFirst({
+        where: eq(memberships.userId, userId),
+      });
+      if (!membership) {
+        return res.status(404).json({ success: false, error: 'Membership not found' });
+      }
+      if (membership.contractType !== 'recurring') {
+        return res.status(400).json({ success: false, error: 'Recurring contract is required' });
+      }
+
+      const today = todayUtcString();
+      if (recurringTerminationDate && recurringTerminationDate < today) {
+        return res
+          .status(400)
+          .json({ success: false, error: 'Termination date cannot be in the past' });
+      }
+
+      const [updated] = await db
+        .update(memberships)
+        .set({
+          recurringTerminationDate,
+          updatedAt: new Date(),
+        })
+        .where(eq(memberships.id, membership.id))
+        .returning({
+          id: memberships.id,
+          recurringTerminationDate: memberships.recurringTerminationDate,
+        });
+
+      return res.status(200).json({ success: true, data: updated });
+    } catch (error: unknown) {
+      if (error instanceof ZodError) {
+        return res.status(400).json({
+          success: false,
+          error: 'Validation failed',
+          details: error.flatten(),
+        });
+      }
+      logger.error('Failed to set recurring termination date', error, {
+        userId: req.user?.id,
+        targetUserId: req.params.userId,
+      });
+      return res.status(500).json({ success: false, error: 'Internal server error' });
     }
   }
 }

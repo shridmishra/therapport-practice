@@ -35,6 +35,15 @@ export const kioskActionEnum = pgEnum('kiosk_action', ['sign_in', 'sign_out']);
 export const notificationStatusEnum = pgEnum('notification_status', ['pending', 'sent', 'failed']);
 export const userStatusEnum = pgEnum('user_status', ['pending', 'active', 'suspended', 'rejected']);
 export const subscriptionTypeEnum = pgEnum('subscription_type', ['monthly', 'ad_hoc']);
+export const contractTypeEnum = pgEnum('contract_type', ['standard', 'recurring']);
+export const recurringWeekdayEnum = pgEnum('recurring_weekday', [
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+]);
+export const recurringTimeBandEnum = pgEnum('recurring_time_band', ['morning', 'afternoon']);
 export const creditSourceEnum = pgEnum('credit_source', [
   'monthly_subscription',
   'ad_hoc_subscription',
@@ -78,7 +87,14 @@ export const memberships = pgTable('memberships', {
     .references(() => users.id, { onDelete: 'cascade' }),
   type: membershipTypeEnum('type').notNull(),
   marketingAddon: boolean('marketing_addon').notNull().default(false),
+  contractType: contractTypeEnum('contract_type').notNull().default('standard'),
   permanentSchedule: jsonb('permanent_schedule'),
+  recurringStartDate: date('recurring_start_date'),
+  recurringPractitionerName: varchar('recurring_practitioner_name', { length: 255 }),
+  recurringWeekday: recurringWeekdayEnum('recurring_weekday'),
+  recurringRoomId: uuid('recurring_room_id').references(() => rooms.id, { onDelete: 'set null' }),
+  recurringTimeBand: recurringTimeBandEnum('recurring_time_band'),
+  recurringTerminationDate: date('recurring_termination_date'),
   subscriptionType: subscriptionTypeEnum('subscription_type'),
   stripeSubscriptionId: varchar('stripe_subscription_id', { length: 255 }),
   stripeCustomerId: varchar('stripe_customer_id', { length: 255 }),

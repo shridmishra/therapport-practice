@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+Disallow: /availability-prices/pimlico
+Disallow: /availability-prices/kensington

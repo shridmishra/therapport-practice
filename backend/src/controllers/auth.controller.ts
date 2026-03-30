@@ -10,6 +10,7 @@ import { logger } from '../utils/logger.util';
 import { HeadObjectCommand } from '@aws-sdk/client-s3';
 import { r2Client, R2_BUCKET_NAME } from '../config/r2';
 import { processBase64Image } from '../utils/image.util';
+import { recurringSlotSchema } from '../schemas/auth.schemas';
 
 const registerSchema = z.object({
   firstName: z.string().min(1).max(100),
@@ -18,6 +19,7 @@ const registerSchema = z.object({
   password: z.string().min(8),
   membershipType: z.enum(['permanent', 'ad_hoc']),
   marketingAddon: z.boolean(),
+  recurringSlot: recurringSlotSchema.optional(),
 });
 
 const loginSchema = z.object({

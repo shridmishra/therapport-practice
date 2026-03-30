@@ -1861,6 +1861,44 @@ export interface PermanentSlot {
  */
 export async function getPermanentSlotsForUser(userId: string): Promise<PermanentSlot[]> {
   const today = todayUtcString();
+  const [recurringMembership] = await db
+    .select({
+      contractType: memberships.contractType,
+      startDate: memberships.recurringStartDate,
+      terminationDate: memberships.recurringTerminationDate,
+      weekday: memberships.recurringWeekday,
+      timeBand: memberships.recurringTimeBand,
+      roomName: rooms.name,
+      locationName: locations.name,
+    })
+    .from(memberships)
+    .leftJoin(rooms, eq(memberships.recurringRoomId, rooms.id))
+    .leftJoin(locations, eq(rooms.locationId, locations.id))
+    .where(eq(memberships.userId, userId))
+    .limit(1);
+
+  if (
+    recurringMembership?.contractType === 'recurring' &&
+    (!recurringMembership.startDate || recurringMembership.startDate <= today) &&
+    (!recurringMembership.terminationDate || recurringMembership.terminationDate >= today) &&
+    recurringMembership.weekday &&
+    recurringMembership.timeBand &&
+    recurringMembership.roomName &&
+    recurringMembership.locationName
+  ) {
+    return [
+      {
+        dayOfWeek:
+          recurringMembership.weekday.charAt(0).toUpperCase() +
+          recurringMembership.weekday.slice(1),
+        roomName: recurringMembership.roomName,
+        locationName: recurringMembership.locationName,
+        startTime: recurringMembership.timeBand === 'morning' ? '8am' : '3pm',
+        endTime: recurringMembership.timeBand === 'morning' ? '3pm' : '10pm',
+      },
+    ];
+  }
+
   const toDate = new Date(today + 'T12:00:00Z');
   toDate.setUTCDate(toDate.getUTCDate() + 84);
   const toDateStr = toDate.toISOString().split('T')[0];
