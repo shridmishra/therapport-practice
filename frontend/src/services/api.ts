@@ -260,6 +260,30 @@ export interface InvoiceItem {
   invoice_pdf: string | null;
 }
 
+export interface AdminHourlyRateItem {
+  id: string;
+  locationName: 'Pimlico' | 'Kensington';
+  dayType: 'weekday' | 'weekend';
+  timeBand: 'morning' | 'afternoon' | 'all_day';
+  rateGbp: number;
+}
+
+export interface AdminPermanentSlotRateItem {
+  id: string;
+  locationName: 'Pimlico' | 'Kensington';
+  roomGroup: string;
+  dayType: 'weekday' | 'weekend';
+  timeBand: 'morning' | 'afternoon' | 'all_day';
+  monthlyFeeGbp: number;
+}
+
+export interface AdminPricesPayload {
+  monthlySubscriptionGbp: number;
+  adHocSubscriptionGbp: number;
+  hourlyRates: AdminHourlyRateItem[];
+  permanentSlotRates: AdminPermanentSlotRateItem[];
+}
+
 /** Response type for successful createBooking calls (2xx status codes). */
 export type CreateBookingResponse =
   | { success: true; booking: { id: string } }
@@ -527,6 +551,30 @@ export const kioskApi = {
 
 // Admin API methods
 export const adminApi = {
+  getPrices: () => {
+    return api.get<ApiResponse<AdminPricesPayload>>('/admin/prices');
+  },
+
+  updatePrices: (data: {
+    monthlySubscriptionGbp: number;
+    adHocSubscriptionGbp: number;
+    hourlyRates: Array<{
+      locationName: 'Pimlico' | 'Kensington';
+      dayType: 'weekday' | 'weekend';
+      timeBand: 'morning' | 'afternoon' | 'all_day';
+      rateGbp: number;
+    }>;
+    permanentSlotRates: Array<{
+      locationName: 'Pimlico' | 'Kensington';
+      roomGroup: string;
+      dayType: 'weekday' | 'weekend';
+      timeBand: 'morning' | 'afternoon' | 'all_day';
+      monthlyFeeGbp: number;
+    }>;
+  }) => {
+    return api.put<ApiResponse<AdminPricesPayload>>('/admin/prices', data);
+  },
+
   getKioskCurrent: () => {
     return api.get<
       ApiResponse<{

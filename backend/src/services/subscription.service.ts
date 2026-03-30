@@ -16,6 +16,7 @@ import { isStripeConfigured } from '../config/stripe';
 import { MembershipNotFoundError, OnlyAdHocTerminableError } from '../errors/subscription.errors';
 import { logger } from '../utils/logger.util';
 import { emailService } from './email.service';
+import * as PricingService from './pricing.service';
 
 /**
  * Get existing Stripe customer ID from membership or by email, or create a new customer and persist to membership.
@@ -57,18 +58,6 @@ async function getOrCreateStripeCustomerId(
       .where(eq(memberships.id, membership.id));
   }
   return customerId;
-}
-
-const AD_HOC_AMOUNT_GBP = 150;
-const MONTHLY_AMOUNT_GBP = 105;
-
-/** Stripe Price ID for monthly £105 subscription (set in env). */
-function getMonthlyPriceId(): string {
-  const id = process.env.STRIPE_MONTHLY_PRICE_ID;
-  if (!id || !id.trim()) {
-    throw new Error('STRIPE_MONTHLY_PRICE_ID is not set');
-  }
-  return id.trim();
 }
 
 /**
@@ -309,15 +298,15 @@ export async function createMonthlySubscription(
     throw new TypeError('Invalid joinDate');
   }
 
-  const prorata = ProrataService.calculateProrataAmount(join, MONTHLY_AMOUNT_GBP);
+  const { monthlySubscriptionGbp } = await PricingService.getSubscriptionPrices();
+  const prorata = ProrataService.calculateProrataAmount(join, monthlySubscriptionGbp);
   const proratedAmountPence = Math.round(prorata.currentMonthAmount * 100);
   const nextMonthAmountPence = Math.round(prorata.nextMonthAmount * 100);
   const customerId = await getOrCreateStripeCustomerId(userId, email, name);
-  const priceId = getMonthlyPriceId();
   const baseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
   const { checkoutUrl } = await StripePaymentService.createCheckoutSessionForSubscription({
     customerId,
-    priceId,
+    monthlyAmountPence: nextMonthAmountPence,
     userId,
     successUrl: `${baseUrl}/subscription?session_id={CHECKOUT_SESSION_ID}`,
     cancelUrl: `${baseUrl}/subscription`,
@@ -368,8 +357,9 @@ export async function createAdHocSubscription(
     throw new TypeError('Invalid purchaseDate');
   }
 
+  const { adHocSubscriptionGbp } = await PricingService.getSubscriptionPrices();
   const customerId = await getOrCreateStripeCustomerId(userId, email, name);
-  const amountPence = AD_HOC_AMOUNT_GBP * 100;
+  const amountPence = Math.round(adHocSubscriptionGbp * 100);
   const { paymentIntentId, clientSecret } = await StripePaymentService.createPaymentIntent({
     amount: amountPence,
     currency: 'gbp',
@@ -465,6 +455,7 @@ export async function processAdHocPaymentSuccess(
   userId: string,
   purchaseDateStr: string
 ): Promise<void> {
+  const { adHocSubscriptionGbp } = await PricingService.getSubscriptionPrices();
   const d = new Date(purchaseDateStr + 'T12:00:00Z');
   if (Number.isNaN(d.getTime())) {
     throw new TypeError('Invalid purchaseDate');
@@ -486,7 +477,7 @@ export async function processAdHocPaymentSuccess(
 
   await CreditTransactionService.grantCredits(
     userId,
-    AD_HOC_AMOUNT_GBP,
+    adHocSubscriptionGbp,
     subscriptionEndDate,
     'ad_hoc_subscription',
     undefined,
@@ -576,7 +567,8 @@ export async function getSubscriptionStatusDetails(
     membership: status.membership,
   };
   if (status.membership?.subscriptionType === 'monthly') {
-    result.monthlyPriceGbp = MONTHLY_AMOUNT_GBP;
+    const { monthlySubscriptionGbp } = await PricingService.getSubscriptionPrices();
+    result.monthlyPriceGbp = monthlySubscriptionGbp;
   }
   if (status.membership?.type === 'permanent') {
     result.permanentSlots = await BookingService.getPermanentSlotsForUser(userId);

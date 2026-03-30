@@ -28,6 +28,7 @@ import { CreditService } from '../services/credit.service';
 import { VoucherService } from '../services/voucher.service';
 import { getRevenueForMonthGbp } from '../services/stripe-payment.service';
 import { KioskService } from '../services/kiosk.service';
+import * as PricingService from '../services/pricing.service';
 
 const updateMembershipSchema = z.object({
   type: z.enum(['permanent', 'ad_hoc']).nullable().optional(),
@@ -68,6 +69,32 @@ const referenceConfirmSchema = z.object({
   filePath: z.string().min(1),
   fileName: z.string().min(1),
   oldDocumentId: z.string().uuid().optional(),
+});
+
+const adminPricesUpdateSchema = z.object({
+  monthlySubscriptionGbp: z.number().positive('Monthly subscription must be greater than 0'),
+  adHocSubscriptionGbp: z.number().positive('Ad-hoc subscription must be greater than 0'),
+  hourlyRates: z
+    .array(
+      z.object({
+        locationName: z.enum(['Pimlico', 'Kensington']),
+        dayType: z.enum(['weekday', 'weekend']),
+        timeBand: z.enum(['morning', 'afternoon', 'all_day']),
+        rateGbp: z.number().positive('Hourly rate must be greater than 0'),
+      })
+    )
+    .min(1, 'At least one hourly rate is required'),
+  permanentSlotRates: z
+    .array(
+      z.object({
+        locationName: z.enum(['Pimlico', 'Kensington']),
+        roomGroup: z.string().min(1, 'roomGroup is required'),
+        dayType: z.enum(['weekday', 'weekend']),
+        timeBand: z.enum(['morning', 'afternoon', 'all_day']),
+        monthlyFeeGbp: z.number().positive('Permanent slot fee must be greater than 0'),
+      })
+    )
+    .min(1, 'At least one permanent slot rate is required'),
 });
 
 /** Operating hours 08:00–22:00 = 14h per room per day for occupancy capacity. */
@@ -1633,6 +1660,48 @@ export class AdminController {
           url: req.originalUrl,
         }
       );
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+
+  async getPrices(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Authentication required' });
+      }
+      const data = await PricingService.getAdminPrices();
+      res.status(200).json({ success: true, data });
+    } catch (error: unknown) {
+      logger.error('Failed to get admin prices', error, {
+        userId: req.user?.id,
+        method: req.method,
+        url: req.originalUrl,
+      });
+      res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+
+  async updatePrices(req: AuthRequest, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ success: false, error: 'Authentication required' });
+      }
+      const payload = adminPricesUpdateSchema.parse(req.body);
+      const data = await PricingService.updateAdminPrices(payload, req.user.id);
+      res.status(200).json({ success: true, data });
+    } catch (error: unknown) {
+      if (error instanceof ZodError) {
+        return res.status(400).json({
+          success: false,
+          error: 'Validation failed',
+          details: error.flatten(),
+        });
+      }
+      logger.error('Failed to update admin prices', error, {
+        userId: req.user?.id,
+        method: req.method,
+        url: req.originalUrl,
+      });
       res.status(500).json({ success: false, error: 'Internal server error' });
     }
   }

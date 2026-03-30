@@ -502,7 +502,7 @@ export async function validateBookingRequest(
   try {
     const { locationName } = await getRoomWithLocation(roomId);
     const dateObj = new Date(date + 'T12:00:00Z');
-    PricingService.calculateTotalPrice(locationName, dateObj, startTime, endTime);
+    await PricingService.calculateTotalPrice(locationName, dateObj, startTime, endTime);
   } catch (e) {
     return { valid: false, error: e instanceof Error ? e.message : 'Invalid room or time' };
   }
@@ -529,7 +529,7 @@ export async function getBookingQuote(
 ): Promise<{ totalPrice: number; currency: string }> {
   const { locationName } = await getRoomWithLocation(roomId);
   const dateObj = new Date(date + 'T12:00:00Z');
-  const totalPrice = PricingService.calculateTotalPrice(locationName, dateObj, startTime, endTime);
+  const totalPrice = await PricingService.calculateTotalPrice(locationName, dateObj, startTime, endTime);
   return { totalPrice, currency: 'GBP' };
 }
 
@@ -575,7 +575,7 @@ export async function createBooking(
 
   const { room, locationName } = await getRoomWithLocation(roomId);
   const dateObj = new Date(date + 'T12:00:00Z');
-  const totalPrice = PricingService.calculateTotalPrice(locationName, dateObj, startTime, endTime);
+  const totalPrice = await PricingService.calculateTotalPrice(locationName, dateObj, startTime, endTime);
   const durationHours = timeToHours(endTime) - timeToHours(startTime);
   if (durationHours <= 0) throw new BookingValidationError('Invalid booking span');
 
@@ -1437,7 +1437,7 @@ export async function updateBooking(
       const roomWithLoc = await getRoomWithLocationTx(tx, newRoomId);
       locationName = roomWithLoc.locationName;
       try {
-        PricingService.calculateTotalPrice(
+        await PricingService.calculateTotalPrice(
           locationName,
           new Date(newDate + 'T12:00:00Z'),
           newStartTime,
@@ -1460,7 +1460,7 @@ export async function updateBooking(
     }
 
     const dateObj = new Date(newDate + 'T12:00:00Z');
-    const totalPrice = PricingService.calculateTotalPrice(
+    const totalPrice = await PricingService.calculateTotalPrice(
       locationName,
       dateObj,
       newStartTime,

@@ -11,6 +11,7 @@ import {
   pgEnum,
   jsonb,
   index,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
@@ -40,6 +41,8 @@ export const creditSourceEnum = pgEnum('credit_source', [
   'pay_difference',
   'manual',
 ]);
+export const priceDayTypeEnum = pgEnum('price_day_type', ['weekday', 'weekend']);
+export const priceTimeBandEnum = pgEnum('price_time_band', ['morning', 'afternoon', 'all_day']);
 // Users table
 export const users = pgTable(
   'users',
@@ -86,6 +89,60 @@ export const memberships = pgTable('memberships', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
+
+// Admin-managed pricing settings (single global row)
+export const pricingSettings = pgTable('pricing_settings', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  monthlySubscriptionGbp: decimal('monthly_subscription_gbp', { precision: 10, scale: 2 }).notNull(),
+  adHocSubscriptionGbp: decimal('ad_hoc_subscription_gbp', { precision: 10, scale: 2 }).notNull(),
+  updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+// Hourly booking rates by location/day/time band
+export const hourlyRates = pgTable(
+  'hourly_rates',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    locationName: locationNameEnum('location_name').notNull(),
+    dayType: priceDayTypeEnum('day_type').notNull(),
+    timeBand: priceTimeBandEnum('time_band').notNull(),
+    rateGbp: decimal('rate_gbp', { precision: 10, scale: 2 }).notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    locationDayBandUnique: uniqueIndex('hourly_rates_location_day_band_unique').on(
+      table.locationName,
+      table.dayType,
+      table.timeBand
+    ),
+  })
+);
+
+// Permanent slot monthly fees matrix
+export const permanentSlotRates = pgTable(
+  'permanent_slot_rates',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    locationName: locationNameEnum('location_name').notNull(),
+    roomGroup: varchar('room_group', { length: 100 }).notNull(),
+    dayType: priceDayTypeEnum('day_type').notNull(),
+    timeBand: priceTimeBandEnum('time_band').notNull(),
+    monthlyFeeGbp: decimal('monthly_fee_gbp', { precision: 10, scale: 2 }).notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    locationGroupDayBandUnique: uniqueIndex('permanent_slot_rates_unique').on(
+      table.locationName,
+      table.roomGroup,
+      table.dayType,
+      table.timeBand
+    ),
+  })
+);
 
 // Locations table
 export const locations = pgTable('locations', {

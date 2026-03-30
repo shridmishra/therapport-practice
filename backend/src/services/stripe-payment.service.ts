@@ -159,7 +159,7 @@ export interface FirstInvoiceSplit {
 
 export interface CreateCheckoutSessionForSubscriptionParams {
   customerId: string;
-  priceId: string;
+  monthlyAmountPence: number;
   userId: string;
   successUrl: string;
   cancelUrl: string;
@@ -182,21 +182,10 @@ export async function createCheckoutSessionForSubscription(
   params: CreateCheckoutSessionForSubscriptionParams
 ): Promise<CreateCheckoutSessionForSubscriptionResult> {
   const stripe = getStripe();
-  // Get the monthly price amount from the priceId to create a custom line item with the correct name
-  const price = await stripe.prices.retrieve(params.priceId);
-  if (price.unit_amount === null) {
-    throw new Error(
-      `Price ${params.priceId} uses tiered or metered billing (unit_amount is null). ` +
-      'Only fixed-amount prices are supported for monthly subscriptions.'
-    );
+  const monthlyAmountPence = Math.round(params.monthlyAmountPence);
+  if (!Number.isFinite(monthlyAmountPence) || monthlyAmountPence <= 0) {
+    throw new Error('Invalid monthlyAmountPence: must be a positive integer amount in pence');
   }
-  if (price.unit_amount === 0) {
-    throw new Error(
-      `Price ${params.priceId} has zero unit_amount. ` +
-      'Zero-amount subscriptions are not supported.'
-    );
-  }
-  const monthlyAmountPence = price.unit_amount;
   
   const lineItems: Array<{
     price_data: { currency: string; unit_amount: number; product_data: { name: string }; recurring?: { interval: 'month' } };

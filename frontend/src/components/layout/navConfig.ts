@@ -20,6 +20,7 @@ export const adminNavItems: NavItem[] = [
   { name: 'Dashboard', icon: 'dashboard', path: '/admin', implemented: true },
   { name: 'Practitioners', icon: 'people', path: '/admin/practitioners', implemented: true },
   { name: 'Calendar', icon: 'calendar_month', path: '/admin/calendar', implemented: true },
+  { name: 'Prices', icon: 'payments', path: '/admin/prices', implemented: true },
    { name: 'Kiosk Logs', icon: 'history', path: '/admin/kiosk-logs', implemented: true },
   { name: 'Profile', icon: 'person', path: '/admin/profile', implemented: true },
 ];

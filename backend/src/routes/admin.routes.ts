@@ -43,6 +43,20 @@ router.get(
 );
 
 router.get(
+  '/prices',
+  authenticate,
+  requireRole('admin'),
+  adminController.getPrices.bind(adminController)
+);
+
+router.put(
+  '/prices',
+  authenticate,
+  requireRole('admin'),
+  adminController.updatePrices.bind(adminController)
+);
+
+router.get(
   '/practitioners',
   authenticate,
   requireRole('admin'),

@@ -79,7 +79,7 @@ export class SubscriptionController {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to create monthly subscription';
-      if (message.includes('not configured') || message.includes('STRIPE_MONTHLY_PRICE_ID')) {
+      if (message.includes('not configured')) {
         res.status(503).json({ success: false, error: message });
         return;
       }

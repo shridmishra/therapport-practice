@@ -18,6 +18,7 @@ import { PractitionerManagement } from './pages/admin/PractitionerManagement';
 import { AdminCalendar } from './pages/admin/AdminCalendar';
 import { AdminProfile } from './pages/admin/AdminProfile';
 import { AdminKioskLogs } from './pages/admin/AdminKioskLogs';
+import { AdminPrices } from './pages/admin/AdminPrices';
 import { KioskPage } from './pages/kiosk/KioskPage';
 import './styles/globals.css';
 
@@ -102,6 +103,14 @@ function App() {
               element={
                 <ProtectedRoute requiredRole="admin">
                   <AdminProfile />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/prices"
+              element={
+                <ProtectedRoute requiredRole="admin">
+                  <AdminPrices />
                 </ProtectedRoute>
               }
             />
